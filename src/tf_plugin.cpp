@@ -73,6 +73,13 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
     string file_path = __FILE__;
     m_current_filepath = file_path.substr(0, file_path.rfind("/"));
 
+    // Get pointer to World
+    m_worldPtr = a_afWorld;
+
+     // Improve the constratint
+    m_worldPtr->m_bulletWorld->getSolverInfo().m_erp = 1.0;  // improve out of plane error of joints
+    m_worldPtr->m_bulletWorld->getSolverInfo().m_erp2 = 1.0; // improve out of plane error of joints
+
     // When config file was defined
     if(!tf_list_path.empty()){
         return readTFListYaml(tf_list_path);   
@@ -132,18 +139,15 @@ int afTFPlugin::readTFListYaml(string file_path){
 
             // Store transformation 
             if (transformINFO->transformType_ == TransformationType::FIXED){
+                vector<vector<double>> mat =node[transformName]["transformation"].as<vector<vector<double>>>();
                 double rotMat[3][3];
                 // Retrieve the matrix from YAML and copy it to the array
                 for (size_t i = 0; i < 3; ++i) {
                     for (size_t j = 0; j < 3; ++j) {
-                        rotMat[i][j] = node["transformation"][i][j].as<double>();
+                        rotMat[i][j] = mat[i][j];
                     }
                 }
-                transformINFO->transformation_.setLocalPos(cVector3d(
-                    node["transformation"][0][3].as<double>(), 
-                    node["transformation"][1][3].as<double>(), 
-                    node["transformation"][2][3].as<double>()
-                    ));
+                transformINFO->transformation_.setLocalPos(cVector3d(mat[0][3], mat[1][3], mat[2][3]));
                 
                 cMatrix3d rot;
                 rot.set(rotMat);
@@ -157,19 +161,19 @@ int afTFPlugin::readTFListYaml(string file_path){
                 btVector3 translation;
 
                 // Check if the transformation node exists
-                if (node["transformation"]) {
+                if (node[transformName]["transformation"]) {
                     // Extract the 3x3 rotation matrix from the top-left corner
                     for (size_t i = 0; i < 3; ++i) {
                         for (size_t j = 0; j < 3; ++j) {
-                            rotation[i][j] = node["transformation"][i][j].as<double>();
+                            rotation[i][j] = node[transformName]["transformation"][i][j].as<double>();
                         }
                     }
 
                     // Extract the translation vector from the 4th column
                     translation.setValue(
-                        node["transformation"][0][3].as<double>(),
-                        node["transformation"][1][3].as<double>(),
-                        node["transformation"][2][3].as<double>()
+                        node[transformName]["transformation"][0][3].as<double>(),
+                        node[transformName]["transformation"][1][3].as<double>(),
+                        node[transformName]["transformation"][2][3].as<double>()
                     );
                 }
 

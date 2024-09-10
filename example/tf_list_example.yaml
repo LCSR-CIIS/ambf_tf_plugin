@@ -7,11 +7,10 @@ transformations:
 
 TF World-PegBoard:
   parent: World # World: AMBF world origin
-  child: BODY Puzzle_Board
-  type: Fixed # {Fixed, Initial, ROS}
-  transformation:
-  [
-  [ 0.      ,  0.        , -0.00691823 , 0.        ],
-  [ 0.      ,  1.25940981, -0.114317314, 0.        ],
-  [ 0.      ,  0.        , -1.02020202 ,-0.02020202],
-  [ 0.      ,  0.        , -1.         , 0.        ]]
+  child: Puzzle_Board
+  type: INITIAL # {FIXED, INITIAL, ROS}
+  transformation: [
+  [ 1.0, 0.0, 0.0, 0.0], 
+  [ 0.0, 1.0, 0.0, 0.0],
+  [ 0.0, 0.0, 1.0, 0.5],
+  [ 0.0, 0.0, 0.0, 1.0]]
