@@ -19,7 +19,7 @@ ambf_simulator --plugins <plugin_path>/build/libambf_tf_plugin.so --tf_list exam
 
 In your `tf_list.yaml`, you can add as many transformations in the following format:
 ```tf_list_example.yaml
-type: Fixed # {Fixed, Initial, ROS}ons:
+type: Fixed # {Fixed, Initial, ROS}:
 - TF World-PegBoard
 
 TF World-PegBoard:
