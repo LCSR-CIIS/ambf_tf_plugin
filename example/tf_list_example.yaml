@@ -6,7 +6,7 @@ transformations:
 - TF World-PegBoard
 
 TF World-PegBoard:
-  parent: World # World: AMBF world origin
+  parent: World # World: AMBF world origin or Name of rigidBody
   child: Puzzle_Board
   type: INITIAL # {FIXED, INITIAL, ROS}
   transformation: [
