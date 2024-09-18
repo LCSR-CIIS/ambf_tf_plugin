@@ -42,6 +42,8 @@
 // To silence warnings on MacOS
 #define GL_SILENCE_DEPRECATION
 #include <afFramework.h>
+#include <version_1_0/adf_loader_1_0.h>
+#include <afConversions.h>
 #include <yaml-cpp/yaml.h>
 #include <boost/program_options.hpp>
 
@@ -68,6 +70,10 @@ struct Transforms{
     chai3d::cTransform transformation_;
 };
 
+// Convertion function
+void convertFloatTobtMatrix(double rotation[3][3], btMatrix3x3 btRotationMatrix);
+void convertChaiToBulletTransform(chai3d::cTransform& cTrans, btTransform& btTrans);
+
 class afTFPlugin: public afSimulatorPlugin{
     public:
         afTFPlugin();
@@ -79,7 +85,11 @@ class afTFPlugin: public afSimulatorPlugin{
         virtual bool close() override;
 
     protected:
+        void moveRigidBody(const Transforms*, const btTransform transform);
+
         int readTFListYaml(string file_path);
+        void readTransformationFromYaml(Transforms* transformINFO, YAML::Node& node);
+
 
     // private:
         // Pointer to the world

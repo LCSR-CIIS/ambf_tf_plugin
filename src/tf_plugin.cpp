@@ -37,6 +37,7 @@
 
     \author    <hishida3@jhu.edu>
     \author    Hisashi Ishida
+    \date      09.18.2024
     
 */
 //==============================================================================
@@ -44,6 +45,35 @@
 #include "tf_plugin.h"
 
 using namespace std;
+
+void convertFloatTobtMatrix(double rotation[3][3], btMatrix3x3 btRotationMatrix){
+    // Convert the rotation matrix to a btMatrix3x3
+    btRotationMatrix.setValue(
+        rotation[0][0], rotation[0][1], rotation[0][2],
+        rotation[1][0], rotation[1][1], rotation[1][2],
+        rotation[2][0], rotation[2][1], rotation[2][2]
+    );
+}
+
+// Convert chai3d::cTransform to btTransform
+void convertChaiToBulletTransform(chai3d::cTransform& cTrans, btTransform& btTrans){
+    
+    // Set translation
+    btVector3 translation;
+    translation.setValue(cTrans.getLocalPos().x(), cTrans.getLocalPos().y(), cTrans.getLocalPos().z());
+
+    // Set rotation
+    btMatrix3x3 btRotationMatrix;
+    btRotationMatrix.setValue(
+        cTrans.getLocalRot().getRow(0).x(), cTrans.getLocalRot().getRow(0).y(), cTrans.getLocalRot().getRow(0).z(),
+        cTrans.getLocalRot().getRow(1).x(), cTrans.getLocalRot().getRow(1).y(), cTrans.getLocalRot().getRow(1).z(),
+        cTrans.getLocalRot().getRow(2).x(), cTrans.getLocalRot().getRow(2).y(), cTrans.getLocalRot().getRow(2).z()
+    );
+
+    btTrans.setOrigin(translation);
+    btTrans.setBasis(btRotationMatrix);
+}
+
 
 afTFPlugin::afTFPlugin(){
     cout << "/*********************************************" << endl;
@@ -76,13 +106,23 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
     // Get pointer to World
     m_worldPtr = a_afWorld;
 
-     // Improve the constratint
+    // Improve the constratint
     m_worldPtr->m_bulletWorld->getSolverInfo().m_erp = 1.0;  // improve out of plane error of joints
     m_worldPtr->m_bulletWorld->getSolverInfo().m_erp2 = 1.0; // improve out of plane error of joints
 
     // When config file was defined
     if(!tf_list_path.empty()){
-        return readTFListYaml(tf_list_path);   
+        int result = readTFListYaml(tf_list_path);
+
+        // Check for the stored transformation list and if the type is INITIAL, move the corresponding object
+        for (size_t i = 0; i < m_transformList.size(); i++){
+            if (m_transformList[i]->transformType_ == TransformationType::INITIAL){
+                btTransform transform;
+                convertChaiToBulletTransform(m_transformList[i]->transformation_, transform);
+                moveRigidBody(m_transformList[i], transform);
+            }
+        }
+        return result;
     }
 
     // No config file specified
@@ -98,10 +138,37 @@ void afTFPlugin::keyboardUpdate(GLFWwindow* a_window, int a_key, int a_scancode,
 void afTFPlugin::graphicsUpdate(){
 }
 
-void afTFPlugin::physicsUpdate(double dt)
-{   
+void afTFPlugin::moveRigidBody(const Transforms* transformINFO, const btTransform transform){
+    btTransform command;
+    if (transformINFO->parentRB_){
+        btTransform parentTransform;
+        transformINFO->parentRB_->m_bulletRigidBody->getMotionState()->getWorldTransform(parentTransform);
+        command = parentTransform * transform;
+    }
+    else{
+        command = transform;
+    }
+
+    // Apply transformation to the child body
+    transformINFO->childRB_->m_bulletRigidBody->getMotionState()->setWorldTransform(command);
+    transformINFO->childRB_->m_bulletRigidBody->setWorldTransform(command);
+}
+
+
+void afTFPlugin::physicsUpdate(double dt){   
     for (size_t i = 0; i < m_transformList.size(); i++){
-    
+        if (m_transformList[i]->transformType_ == TransformationType::FIXED){
+            btTransform transform;
+            convertChaiToBulletTransform(m_transformList[i]->transformation_, transform);
+            moveRigidBody(m_transformList[i], transform);
+        }
+
+        else if (m_transformList[i]->transformType_ == TransformationType::ROS){
+            // Subscribe the transformation
+
+            // Apply the transfromation to the object
+            // moveRigidBoady(m_transformList[i], transform);
+        }
     }
 }
 
@@ -117,95 +184,37 @@ int afTFPlugin::readTFListYaml(string file_path){
             Transforms* transformINFO = new Transforms();
             string transformName = node["transformations"][i].as<string>();
             
-            // Store transformation name
-            transformINFO->name_ = transformName;
-            
-            // Store transformation type
-            if (node[transformName]["type"].as<string>() == "FIXED")
-                transformINFO->transformType_ = TransformationType::FIXED;
-            if (node[transformName]["type"].as<string>() =="INITIAL")
-                transformINFO->transformType_ = TransformationType::INITIAL;
-            if (node[transformName]["type"].as<string>() == "ROS")
-                transformINFO->transformType_ = TransformationType::ROS;
-
-            // Store parent information
-            // If the parent is "World" then keep the parentRB_ as nullptr
-            if (node[transformName]["parent"].as<string>() != "World"){
-                transformINFO->parentRB_ = m_worldPtr->getRigidBody(node[transformName]["parent"].as<string>());
-            }
-            
-            // Store child information
-            transformINFO->childRB_ = m_worldPtr->getRigidBody(node[transformName]["child"].as<string>());
-
-            // Store transformation 
-            if (transformINFO->transformType_ == TransformationType::FIXED){
-                vector<vector<double>> mat =node[transformName]["transformation"].as<vector<vector<double>>>();
-                double rotMat[3][3];
-                // Retrieve the matrix from YAML and copy it to the array
-                for (size_t i = 0; i < 3; ++i) {
-                    for (size_t j = 0; j < 3; ++j) {
-                        rotMat[i][j] = mat[i][j];
-                    }
-                }
-                transformINFO->transformation_.setLocalPos(cVector3d(mat[0][3], mat[1][3], mat[2][3]));
+            if (node[transformName]){
+                // Store transformation name
+                transformINFO->name_ = transformName;
                 
-                cMatrix3d rot;
-                rot.set(rotMat);
-                transformINFO->transformation_.setLocalRot(rot); 
+                // Store transformation type
+                if (node[transformName]["type"].as<string>() == "FIXED")
+                    transformINFO->transformType_ = TransformationType::FIXED;
+                if (node[transformName]["type"].as<string>() =="INITIAL")
+                    transformINFO->transformType_ = TransformationType::INITIAL;
+                if (node[transformName]["type"].as<string>() == "ROS")
+                    transformINFO->transformType_ = TransformationType::ROS;
+
+                // Store parent information
+                // If the parent is "World" then keep the parentRB_ as nullptr
+                if (node[transformName]["parent"].as<string>() != "World"){
+                    transformINFO->parentRB_ = m_worldPtr->getRigidBody(node[transformName]["parent"].as<string>());
+                }
+                
+                // Store child information
+                transformINFO->childRB_ = m_worldPtr->getRigidBody(node[transformName]["child"].as<string>());
+
+                // Store transformation 
+                readTransformationFromYaml(transformINFO, node);
+                
+                // Push the pointer into the list
                 m_transformList.push_back(transformINFO);
+            
             }
 
-            else if (transformINFO->transformType_ == TransformationType::INITIAL){
-                // Fixed-size array for the 3x3 rotation matrix
-                double rotation[3][3];
-                btVector3 translation;
-
-                // Check if the transformation node exists
-                if (node[transformName]["transformation"]) {
-                    // Extract the 3x3 rotation matrix from the top-left corner
-                    for (size_t i = 0; i < 3; ++i) {
-                        for (size_t j = 0; j < 3; ++j) {
-                            rotation[i][j] = node[transformName]["transformation"][i][j].as<double>();
-                        }
-                    }
-
-                    // Extract the translation vector from the 4th column
-                    translation.setValue(
-                        node[transformName]["transformation"][0][3].as<double>(),
-                        node[transformName]["transformation"][1][3].as<double>(),
-                        node[transformName]["transformation"][2][3].as<double>()
-                    );
-                }
-
-                // Convert the rotation matrix to a btMatrix3x3
-                btMatrix3x3 btRotationMatrix(
-                    rotation[0][0], rotation[0][1], rotation[0][2],
-                    rotation[1][0], rotation[1][1], rotation[1][2],
-                    rotation[2][0], rotation[2][1], rotation[2][2]
-                );
-
-                // Create the btTransform using the rotation matrix and translation vector
-                btTransform transform, command;
-                transform.setBasis(btRotationMatrix);
-                transform.setOrigin(translation);
-
-                if (transformINFO->parentRB_){
-                    btTransform parentTransform;
-                    transformINFO->parentRB_->m_bulletRigidBody->getMotionState()->getWorldTransform(parentTransform);
-                    command = parentTransform * transform;
-                }
-                else{
-                    command = transform;
-                }
-
-                // Apply transformation to the child body
-                transformINFO->childRB_->m_bulletRigidBody->getMotionState()->setWorldTransform(command);
-                transformINFO->childRB_->m_bulletRigidBody->setWorldTransform(command);
-            }
-
-            else if (transformINFO->transformType_ == TransformationType::ROS){
-                // Set up the subscriber
-                m_transformList.push_back(transformINFO);
+            else{
+                return -1;
             }
         }
         return 1;
@@ -213,6 +222,46 @@ int afTFPlugin::readTFListYaml(string file_path){
 
     else {
         return -1;
+    }
+}
+
+void afTFPlugin::readTransformationFromYaml(Transforms* transformINFO, YAML::Node& node){
+    if (transformINFO->transformType_ == TransformationType::FIXED || transformINFO->transformType_ == TransformationType::INITIAL){
+        
+        // Transformation written in position: {x: 0.0, y:0.0, z:0.0}, orientation: {r: 0.0, p: 0.0, y:0.0}
+        if (node[transformINFO->name_]["transformation"]["position"] && node[transformINFO->name_]["transformation"]["orientation"]){
+            
+            YAML::Node transformPos = node[transformINFO->name_]["transformation"]["position"];
+            YAML::Node transformOri = node[transformINFO->name_]["transformation"]["orientation"];
+
+            cVector3d trans = to_cVector3d(adf_loader_1_0::ADFUtils::positionFromNode(&transformPos));
+            cMatrix3d rot = to_cMatrix3d(adf_loader_1_0::ADFUtils::rotationFromNode(&transformOri));
+
+            transformINFO->transformation_.setLocalPos(trans);
+            transformINFO->transformation_.setLocalRot(rot); 
+        }
+
+        // Transformation written in 4x4 matrix
+        else{
+            vector<vector<double>> mat = node[transformINFO->name_]["transformation"].as<vector<vector<double>>>();
+            double rotMat[3][3];
+            // Retrieve the matrix from YAML and copy it to the array
+            for (size_t i = 0; i < 3; ++i) {
+                for (size_t j = 0; j < 3; ++j) {
+                    rotMat[i][j] = mat[i][j];
+                }
+            }
+            transformINFO->transformation_.setLocalPos(cVector3d(mat[0][3], mat[1][3], mat[2][3]));
+            
+            cMatrix3d rot;
+            rot.set(rotMat);
+            transformINFO->transformation_.setLocalRot(rot); 
+        }
+
+    }
+
+    else if (transformINFO->transformType_ == TransformationType::ROS){
+        // Set up the subscriber
     }
 }
 
