@@ -1,5 +1,5 @@
 # ambf_tf_plugin
-AMBF plugin for transformations.
+AMBF plugin for transformations. This plugin directly apply transformation to the rigidbody in AMBF. The predefined transformation can be applied only at the initialization phase (`INITIAL`) all the time (`FIXED`), or using rostopic (`ROS`).
 
 ## 1. Installation Instructions:
 Let's call the absolute location of this package as **<plugin_path>**. E.g. if you cloned this repo in your home folder, **<plugin_path>** = `~/ambf_tf_plugin/` OR `/home/<username>/ambf_tf_plugin`.
@@ -34,3 +34,17 @@ TF World-PegBoard:
   [ 0.0, 0.0, 0.0, 1.0]]
 
 ```
+
+The TF type can be 
+- `INITIAL`: Predefined transformation can be applied only at the initialization phase 
+- `FIXED`: Predefined transformation can be applied ALL the time
+- `ROS`: Transformation from ROS topic will be applied
+
+Predefined transformation can be written in 4x4 matrix or in `position`/`orientation` format:
+```
+position: {x: 0.0, y:0.0, z:0.0}, orientation: {r: 0.0, p: 0.0, y:0.0}
+```
+
+
+## Known problem
+- If the object is `static`, the object will not move. Add mass and increase the friction/damping if needed.
