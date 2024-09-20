@@ -74,6 +74,19 @@ void convertChaiToBulletTransform(chai3d::cTransform& cTrans, btTransform& btTra
     btTrans.setBasis(btRotationMatrix);
 }
 
+void Transforms::transformCallback(geometry_msgs::PoseStampedConstPtr msg){
+    transformation_.setLocalPos(cVector3d(msg->pose.position.x,
+                                        msg->pose.position.y,
+                                        msg->pose.position.z));
+    cQuaternion rot(msg->pose.orientation.w,
+                    msg->pose.orientation.x,
+                    msg->pose.orientation.y,
+                    msg->pose.orientation.z);
+    cMatrix3d rotM;
+    rot.toRotMat(rotM);
+    transformation_.setLocalRot(rotM);
+}
+
 
 afTFPlugin::afTFPlugin(){
     cout << "/*********************************************" << endl;
@@ -157,17 +170,11 @@ void afTFPlugin::moveRigidBody(const Transforms* transformINFO, const btTransfor
 
 void afTFPlugin::physicsUpdate(double dt){   
     for (size_t i = 0; i < m_transformList.size(); i++){
-        if (m_transformList[i]->transformType_ == TransformationType::FIXED){
+        if (m_transformList[i]->transformType_ == TransformationType::FIXED ||
+        m_transformList[i]->transformType_ == TransformationType::ROS){
             btTransform transform;
             convertChaiToBulletTransform(m_transformList[i]->transformation_, transform);
             moveRigidBody(m_transformList[i], transform);
-        }
-
-        else if (m_transformList[i]->transformType_ == TransformationType::ROS){
-            // Subscribe the transformation
-
-            // Apply the transfromation to the object
-            // moveRigidBoady(m_transformList[i], transform);
         }
     }
 }
@@ -210,16 +217,13 @@ int afTFPlugin::readTFListYaml(string file_path){
                 
                 // Push the pointer into the list
                 m_transformList.push_back(transformINFO);
-            
             }
-
             else{
                 return -1;
             }
         }
         return 1;
     }
-
     else {
         return -1;
     }
@@ -257,11 +261,13 @@ void afTFPlugin::readTransformationFromYaml(Transforms* transformINFO, YAML::Nod
             rot.set(rotMat);
             transformINFO->transformation_.setLocalRot(rot); 
         }
-
     }
 
     else if (transformINFO->transformType_ == TransformationType::ROS){
         // Set up the subscriber
+        transformINFO->rosNode_ = afROSNode::getNode();
+        string topicName = node[transformINFO->name_]["rostopic name"].as<string>();
+        transformINFO->transformSub_ = transformINFO->rosNode_->subscribe(topicName, 1, &Transforms::transformCallback, transformINFO);
     }
 }
 

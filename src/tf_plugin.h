@@ -47,6 +47,10 @@
 #include <yaml-cpp/yaml.h>
 #include <boost/program_options.hpp>
 
+#include <ros/ros.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <ambf_server/RosComBase.h>
+
 namespace boost{
     namespace program_options{
         class variables_map;
@@ -62,12 +66,19 @@ enum class TransformationType{
     FIXED=0, INITIAL=1, ROS=2
 };
 
-struct Transforms{
-    string name_;
-    TransformationType transformType_;
-    afRigidBodyPtr parentRB_ = nullptr;
-    afRigidBodyPtr childRB_ = nullptr;
-    chai3d::cTransform transformation_;
+class Transforms{
+    public:
+        string name_;
+        TransformationType transformType_;
+        afRigidBodyPtr parentRB_ = nullptr;
+        afRigidBodyPtr childRB_ = nullptr;
+        chai3d::cTransform transformation_;
+
+        // ROS related
+        ros::NodeHandle* rosNode_;
+        ros::Subscriber transformSub_;
+
+        void transformCallback(geometry_msgs::PoseStampedConstPtr msg);
 };
 
 // Convertion function
