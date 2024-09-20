@@ -1,0 +1,35 @@
+# List of Transformations used in ambf_tf_plugin
+# Author: Hisashi Ishida (hishida3@jhu.edu)
+# Date: 09.18.2024
+
+transformations:
+- TF World-Test
+- TF Cube-Sphere
+- TF ROS-Test
+
+TF World-Test:
+  parent: World # World: AMBF world origin or Name of rigidBody
+  child: Cube
+  type: INITIAL # {FIXED, INITIAL, ROS}
+  transformation: [
+  [ 1.0, 0.0, 0.0, 0.2], 
+  [ 0.0, 1.0, 0.0, 0.0],
+  [ 0.0, 0.0, 1.0, 0.0],
+  [ 0.0, 0.0, 0.0, 1.0]]
+
+TF Cube-Sphere:
+  parent: Cube # World: AMBF world origin or Name of rigidBody
+  child: Sphere
+  type: FIXED # {FIXED, INITIAL, ROS}
+  transformation: [
+  [ 1.0, 0.0, 0.0, 0.0], 
+  [ 0.0, 1.0, 0.0, 0.6],
+  [ 0.0, 0.0, 1.0, 0.6],
+  [ 0.0, 0.0, 0.0, 1.0]]
+
+TF ROS-Test:
+  parent: Cube
+  child: ROS-sphere
+  type: ROS
+  rostopic name: /test_topic
+
