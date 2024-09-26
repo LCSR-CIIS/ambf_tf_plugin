@@ -1,0 +1,21 @@
+# List of Transformations used in ambf_tf_plugin
+# Author: Hisashi Ishida (hishida3@jhu.edu)
+# Date: 09.18.2024
+
+transformations:
+- TF Anspoch_drill
+- TF marker_body-drill_tip
+
+TF Anspoch_drill:
+  parent: World
+  child: marker_body
+  type: ROS
+  rostopic name: /atracsys/Anspoch_drill/measured_cp
+
+TF marker_body-drill_tip:
+  parent: marker_body
+  child: drill_tip
+  type: FIXED
+  transformation: 
+    position: {x: 0.113055, y: -0.161443, z: 0.084467}
+    orientation: {r: 0.0, p: 0.0, y: 0.0}
