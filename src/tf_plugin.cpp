@@ -150,13 +150,35 @@ void afTFPlugin::keyboardUpdate(GLFWwindow* a_window, int a_key, int a_scancode,
 
 void afTFPlugin::graphicsUpdate(){
 }
+// Function to print a btTransform (translation and rotation)
+void printBtTransform(const btTransform &transform) {
+    // Extract the translation (origin)
+    btVector3 origin = transform.getOrigin();
+    std::cout << "Translation: ["
+              << origin.getX() << ", "
+              << origin.getY() << ", "
+              << origin.getZ() << "]" << std::endl;
 
+    // Extract the rotation (quaternion)
+    btQuaternion rotation = transform.getRotation();
+    std::cout << "Rotation (quaternion): ["
+              << rotation.getX() << ", "
+              << rotation.getY() << ", "
+              << rotation.getZ() << ", "
+              << rotation.getW() << "]" << std::endl;
+
+    // Optional: Convert quaternion to Euler angles if preferred
+    btScalar roll, pitch, yaw;
+    transform.getBasis().getEulerZYX(yaw, pitch, roll); // Bullet uses ZYX convention for Euler angles
+    std::cout << "Rotation (Euler angles): ["
+              << roll << ", " << pitch << ", " << yaw << "]" << std::endl;
+}
 void afTFPlugin::moveRigidBody(const Transforms* transformINFO, const btTransform transform){
     btTransform command;
     if (transformINFO->parentRB_){
         btTransform parentTransform;
         transformINFO->parentRB_->m_bulletRigidBody->getMotionState()->getWorldTransform(parentTransform);
-        command = parentTransform * transform;
+        command = transform * parentTransform;
     }
     else{
         command = transform;
