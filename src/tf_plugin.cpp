@@ -55,25 +55,6 @@ void convertFloatTobtMatrix(double rotation[3][3], btMatrix3x3 btRotationMatrix)
     );
 }
 
-// Convert chai3d::cTransform to btTransform
-void convertChaiToBulletTransform(chai3d::cTransform& cTrans, btTransform& btTrans){
-    
-    // Set translation
-    btVector3 translation;
-    translation.setValue(cTrans.getLocalPos().x(), cTrans.getLocalPos().y(), cTrans.getLocalPos().z());
-
-    // Set rotation
-    btMatrix3x3 btRotationMatrix;
-    btRotationMatrix.setValue(
-        cTrans.getLocalRot().getRow(0).x(), cTrans.getLocalRot().getRow(0).y(), cTrans.getLocalRot().getRow(0).z(),
-        cTrans.getLocalRot().getRow(1).x(), cTrans.getLocalRot().getRow(1).y(), cTrans.getLocalRot().getRow(1).z(),
-        cTrans.getLocalRot().getRow(2).x(), cTrans.getLocalRot().getRow(2).y(), cTrans.getLocalRot().getRow(2).z()
-    );
-
-    btTrans.setOrigin(translation);
-    btTrans.setBasis(btRotationMatrix);
-}
-
 void Transforms::transformCallback(geometry_msgs::PoseStampedConstPtr msg){
     transformation_.setLocalPos(cVector3d(msg->pose.position.x,
                                         msg->pose.position.y,
@@ -130,8 +111,7 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
         // Check for the stored transformation list and if the type is INITIAL, move the corresponding object
         for (size_t i = 0; i < m_transformList.size(); i++){
             if (m_transformList[i]->transformType_ == TransformationType::INITIAL){
-                btTransform transform;
-                convertChaiToBulletTransform(m_transformList[i]->transformation_, transform);
+                btTransform transform = to_btTransform(m_transformList[i]->transformation_);
                 moveRigidBody(m_transformList[i], transform);
             }
         }

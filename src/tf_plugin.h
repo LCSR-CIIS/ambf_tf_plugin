@@ -83,7 +83,6 @@ class Transforms{
 
 // Convertion function
 void convertFloatTobtMatrix(double rotation[3][3], btMatrix3x3 btRotationMatrix);
-void convertChaiToBulletTransform(chai3d::cTransform& cTrans, btTransform& btTrans);
 
 class afTFPlugin: public afSimulatorPlugin{
     public:
