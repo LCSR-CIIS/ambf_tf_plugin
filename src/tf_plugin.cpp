@@ -178,7 +178,7 @@ void afTFPlugin::moveRigidBody(const Transforms* transformINFO, const btTransfor
     if (transformINFO->parentRB_){
         btTransform parentTransform;
         transformINFO->parentRB_->m_bulletRigidBody->getMotionState()->getWorldTransform(parentTransform);
-        command = transform * parentTransform;
+        command = parentTransform * transform;
     }
     else{
         command = transform;
