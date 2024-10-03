@@ -19,13 +19,15 @@ ambf_simulator --plugins <plugin_path>/build/libambf_tf_plugin.so --tf_list exam
 
 In your `tf_list.yaml`, you can add as many transformations in the following format:
 ```tf_list_example.yaml
-type: Fixed # {Fixed, Initial, ROS}:
-- TF World-PegBoard
+transformations:
+  - TF World-PegBoard
+  - TF Cube-Sphere
+  - TF ROS-Test
 
 TF World-PegBoard:
   parent: World # World: AMBF world origin
   child: BODY Puzzle_Board
-  type: INITIAL # {FIXED, INITIAL, ROS}
+  type: INITIAL # This transformation will be applied only once at the initialization phase
   transformation: # 4x4 Transformation matrix
   transformation: [
   [ 1.0, 0.0, 0.0, 0.0], 
@@ -33,6 +35,19 @@ TF World-PegBoard:
   [ 0.0, 0.0, 1.0, 0.5],
   [ 0.0, 0.0, 0.0, 1.0]]
 
+  TF Cube-Sphere:
+  parent: Cube # World: AMBF world origin or Name of rigidBody
+  child: Sphere
+  type: FIXED  # This transformation will be applied all the time
+  transformation: 
+    position: {x: 0.0, y: 0.0, z: 0.0}
+    orientation: {r: 0.0, p: 0.0, y: 0.0}
+
+TF ROS-Test:
+  parent: Cube
+  child: ROS-sphere
+  type: ROS  # The transformation will be received through ROS.
+  rostopic name: /test_topic # Name of the rostopic (`PoseStampedPtr`)
 ```
 
 The TF type can be 
