@@ -174,8 +174,7 @@ void afTFPlugin::physicsUpdate(double dt){
     for (size_t i = 0; i < m_transformList.size(); i++){
         if (m_transformList[i]->transformType_ == TransformationType::FIXED ||
         m_transformList[i]->transformType_ == TransformationType::ROS){
-            btTransform transform;
-            convertChaiToBulletTransform(m_transformList[i]->transformation_, transform);
+            btTransform transform = to_btTransform(m_transformList[i]->transformation_);
             moveRigidBody(m_transformList[i], transform);
         }
     }
