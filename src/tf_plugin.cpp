@@ -112,7 +112,7 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
         for (size_t i = 0; i < m_transformList.size(); i++){
             if (m_transformList[i]->transformType_ == TransformationType::INITIAL){
                 btTransform transform = to_btTransform(m_transformList[i]->transformation_);
-                moveRigidBody(m_transformList[i], transform);
+                moveRigidBody(m_transformList[i], transform, 0.001);
             }
         }
         return result;
@@ -153,7 +153,7 @@ void printBtTransform(const btTransform &transform) {
     std::cout << "Rotation (Euler angles): ["
               << roll << ", " << pitch << ", " << yaw << "]" << std::endl;
 }
-void afTFPlugin::moveRigidBody(const Transforms* transformINFO, const btTransform transform){
+void afTFPlugin::moveRigidBody(const Transforms* transformINFO, const btTransform transform, double dt){
     btTransform command;
     if (transformINFO->parentRB_){
         btTransform parentTransform;
@@ -164,9 +164,35 @@ void afTFPlugin::moveRigidBody(const Transforms* transformINFO, const btTransfor
         command = transform;
     }
 
-    // Apply transformation to the child body
-    transformINFO->childRB_->m_bulletRigidBody->getMotionState()->setWorldTransform(command);
-    transformINFO->childRB_->m_bulletRigidBody->setWorldTransform(command);
+    // If the rigidbody is static
+    if (transformINFO->childRB_->m_bulletRigidBody->isStaticOrKinematicObject()){
+        // Apply transformation to the child body
+        transformINFO->childRB_->m_bulletRigidBody->getMotionState()->setWorldTransform(command);
+        transformINFO->childRB_->m_bulletRigidBody->setWorldTransform(command);
+    }
+
+    // If the rigid body is non-static
+    else{
+        // Get current location     
+        btTransform curr_trans = transformINFO->childRB_->getCOMTransform();
+
+        btVector3 pCommand, rCommand;
+        // Use the internal Cartesian Position Controller to Compute Output
+        pCommand = transformINFO->childRB_->m_controller.computeOutput<btVector3>(curr_trans.getOrigin(), command.getOrigin(), dt);
+        // Use the internal Cartesian Rotation Controller to Compute Output
+        rCommand = transformINFO->childRB_->m_controller.computeOutput<btVector3>(curr_trans.getBasis(), command.getBasis(), dt);
+        
+        // Set controller param here if needed
+        if (transformINFO->childRB_->m_controller.m_positionOutputType == afControlType::FORCE){
+            transformINFO->childRB_->m_bulletRigidBody->applyCentralForce(pCommand);
+            transformINFO->childRB_->m_bulletRigidBody->applyTorque(rCommand);
+        }
+
+        else if (transformINFO->childRB_->m_controller.m_positionOutputType == afControlType::VELOCITY){
+            transformINFO->childRB_->m_bulletRigidBody->setLinearVelocity(pCommand);
+            transformINFO->childRB_->m_bulletRigidBody->setAngularVelocity(rCommand);
+        }
+    }
 }
 
 
@@ -175,7 +201,7 @@ void afTFPlugin::physicsUpdate(double dt){
         if (m_transformList[i]->transformType_ == TransformationType::FIXED ||
         m_transformList[i]->transformType_ == TransformationType::ROS){
             btTransform transform = to_btTransform(m_transformList[i]->transformation_);
-            moveRigidBody(m_transformList[i], transform);
+            moveRigidBody(m_transformList[i], transform, dt);
         }
     }
 }

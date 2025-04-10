@@ -95,7 +95,7 @@ class afTFPlugin: public afSimulatorPlugin{
         virtual bool close() override;
 
     protected:
-        void moveRigidBody(const Transforms*, const btTransform transform);
+        void moveRigidBody(const Transforms*, const btTransform transform, double dt);
 
         int readTFListYaml(string file_path);
         void readTransformationFromYaml(Transforms* transformINFO, YAML::Node& node);
