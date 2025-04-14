@@ -90,7 +90,7 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
     p_opt::options_description cmd_opts("AMBF_TF_Plugin Command Line Options");
     cmd_opts.add_options()
             ("info", "Show Info")
-            ("mute", p_opt::value<bool>()->default_value(false), "Mute")
+            ("mute", p_opt::value<bool>()->default_value(true), "Mute")
             ("tf_list", p_opt::value<string>()->default_value(""), "Name of tf_list yaml file");
 
     p_opt::variables_map var_map;
