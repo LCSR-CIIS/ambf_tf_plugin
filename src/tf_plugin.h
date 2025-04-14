@@ -51,6 +51,9 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <ambf_server/RosComBase.h>
 
+#include <cstdlib>
+
+
 namespace boost{
     namespace program_options{
         class variables_map;
@@ -68,6 +71,7 @@ enum class TransformationType{
 
 class Transforms{
     public:
+        Transforms();
         string name_;
         TransformationType transformType_;
         afRigidBodyPtr parentRB_ = nullptr;
@@ -77,6 +81,9 @@ class Transforms{
         // ROS related
         ros::NodeHandle* rosNode_;
         ros::Subscriber transformSub_;
+
+        // Audio related
+        bool isMsgValid_ = true;
 
         void transformCallback(geometry_msgs::PoseStampedConstPtr msg);
 };
@@ -110,6 +117,10 @@ class afTFPlugin: public afSimulatorPlugin{
 
         // Controllable object
         vector<Transforms*> m_transformList;
+
+        // Path to the beep sound
+        bool m_mute = false;
+        string m_audioFilepath;
 
 };
 

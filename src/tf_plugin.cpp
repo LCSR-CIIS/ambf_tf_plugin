@@ -55,7 +55,18 @@ void convertFloatTobtMatrix(double rotation[3][3], btMatrix3x3 btRotationMatrix)
     );
 }
 
+Transforms::Transforms(){   
+}
+
+
 void Transforms::transformCallback(geometry_msgs::PoseStampedConstPtr msg){
+    if (msg->header.stamp.isZero()) {
+        ROS_WARN_THROTTLE(1.0, "Received PoseStamped with invalid (zero) timestamp");
+        isMsgValid_ = false;
+        return;
+    }
+    isMsgValid_ = true;
+
     transformation_.setLocalPos(cVector3d(msg->pose.position.x,
                                         msg->pose.position.y,
                                         msg->pose.position.z));
@@ -79,6 +90,7 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
     p_opt::options_description cmd_opts("AMBF_TF_Plugin Command Line Options");
     cmd_opts.add_options()
             ("info", "Show Info")
+            ("mute", p_opt::value<bool>()->default_value(false), "Mute")
             ("tf_list", p_opt::value<string>()->default_value(""), "Name of tf_list yaml file");
 
     p_opt::variables_map var_map;
@@ -92,6 +104,7 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
 
     // Loading options 
     string tf_list_path = var_map["tf_list"].as<string>();
+    m_mute = var_map["mute"].as<bool>();
 
     // Define path
     string file_path = __FILE__;
@@ -104,6 +117,9 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
     m_worldPtr->m_bulletWorld->getSolverInfo().m_erp = 1.0;  // improve out of plane error of joints
     m_worldPtr->m_bulletWorld->getSolverInfo().m_erp2 = 1.0; // improve out of plane error of joints
 
+    // Load audio
+    m_audioFilepath = m_current_filepath + "/../example/sounds/tone_440hz.wav";
+    
     // When config file was defined
     if(!tf_list_path.empty()){
         int result = readTFListYaml(tf_list_path);
@@ -202,6 +218,14 @@ void afTFPlugin::physicsUpdate(double dt){
         m_transformList[i]->transformType_ == TransformationType::ROS){
             btTransform transform = to_btTransform(m_transformList[i]->transformation_);
             moveRigidBody(m_transformList[i], transform, dt);
+        }
+
+        if (!m_transformList[i]->isMsgValid_ && !m_mute){
+            string command = "aplay " + m_audioFilepath + " >/dev/null 2>&1 &";
+            system(command.c_str());
+        }
+        else{
+            system("pkill -f aplay"); // Be careful — this kills all 'aplay'
         }
     }
 }
