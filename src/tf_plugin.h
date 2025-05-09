@@ -77,15 +77,20 @@ class Transforms{
         afRigidBodyPtr parentRB_ = nullptr;
         afRigidBodyPtr childRB_ = nullptr;
         chai3d::cTransform transformation_;
+        chai3d::cTransform reference_trans_;
+
+        bool isReference = false;
 
         // ROS related
         ros::NodeHandle* rosNode_;
         ros::Subscriber transformSub_;
+        ros::Subscriber referenceSub_;
 
         // Audio related
         bool isMsgValid_ = true;
 
         void transformCallback(geometry_msgs::PoseStampedConstPtr msg);
+        void referenceTransformCallback(geometry_msgs::PoseStampedConstPtr msg);
 };
 
 // Convertion function

@@ -79,6 +79,25 @@ void Transforms::transformCallback(geometry_msgs::PoseStampedConstPtr msg){
     transformation_.setLocalRot(rotM);
 }
 
+void Transforms::referenceTransformCallback(geometry_msgs::PoseStampedConstPtr msg){
+    if (msg->header.stamp.isZero()) {
+        ROS_WARN_THROTTLE(1.0, "Received PoseStamped with invalid (zero) timestamp");
+        isMsgValid_ = false;
+        return;
+    }
+    isMsgValid_ = true;
+
+    reference_trans_.setLocalPos(cVector3d(msg->pose.position.x,
+                                        msg->pose.position.y,
+                                        msg->pose.position.z));
+    cQuaternion rot(msg->pose.orientation.w,
+                    msg->pose.orientation.x,
+                    msg->pose.orientation.y,
+                    msg->pose.orientation.z);
+    cMatrix3d rotM;
+    rot.toRotMat(rotM);
+    reference_trans_.setLocalRot(rotM);
+}
 
 afTFPlugin::afTFPlugin(){
     cout << "/*********************************************" << endl;
@@ -216,7 +235,14 @@ void afTFPlugin::physicsUpdate(double dt){
     for (size_t i = 0; i < m_transformList.size(); i++){
         if (m_transformList[i]->transformType_ == TransformationType::FIXED ||
         m_transformList[i]->transformType_ == TransformationType::ROS){
-            btTransform transform = to_btTransform(m_transformList[i]->transformation_);
+            chai3d::cTransform ref_inv;
+            if(m_transformList[i]->isReference){
+                ref_inv = m_transformList[i]->reference_trans_;
+                ref_inv.invert();
+            }
+            chai3d::cTransform ctrans = ref_inv * m_transformList[i]->transformation_;
+            btTransform transform = to_btTransform(ctrans);
+
             moveRigidBody(m_transformList[i], transform, dt);
         }
 
@@ -319,6 +345,12 @@ void afTFPlugin::readTransformationFromYaml(Transforms* transformINFO, YAML::Nod
         transformINFO->rosNode_ = afROSNode::getNode();
         string topicName = node[transformINFO->name_]["rostopic name"].as<string>();
         transformINFO->transformSub_ = transformINFO->rosNode_->subscribe(topicName, 1, &Transforms::transformCallback, transformINFO);
+
+        if (node[transformINFO->name_]["reference rostopic name"]){
+            transformINFO->isReference = true;
+            topicName = node[transformINFO->name_]["reference rostopic name"].as<string>();
+            transformINFO->referenceSub_ = transformINFO->rosNode_->subscribe(topicName, 1, &Transforms::referenceTransformCallback, transformINFO);
+        }
     }
 }
 
