@@ -79,7 +79,14 @@ class Transforms{
         chai3d::cTransform transformation_;
         chai3d::cTransform reference_trans_;
 
-        bool isReference = false;
+        bool isReference_ = false;
+
+        // Flag if need to be filtered
+        bool isFiltered_ = false;
+        bool initialized_ = false;
+        chai3d::cTransform filteredTransform_;
+        chai3d::cTransform filteredReferenceTransform_;
+        double alpha_ = 0.1;
 
         // ROS related
         ros::NodeHandle* rosNode_;
@@ -89,6 +96,7 @@ class Transforms{
         // Audio related
         bool isMsgValid_ = true;
 
+        void convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, geometry_msgs::PoseStampedConstPtr msg);
         void transformCallback(geometry_msgs::PoseStampedConstPtr msg);
         void referenceTransformCallback(geometry_msgs::PoseStampedConstPtr msg);
 };

@@ -58,6 +58,18 @@ void convertFloatTobtMatrix(double rotation[3][3], btMatrix3x3 btRotationMatrix)
 Transforms::Transforms(){   
 }
 
+void Transforms::convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, geometry_msgs::PoseStampedConstPtr msg){
+    trans.setLocalPos(cVector3d(msg->pose.position.x,
+                                            msg->pose.position.y,
+                                            msg->pose.position.z));
+    cQuaternion rot(msg->pose.orientation.w,
+                    msg->pose.orientation.x,
+                    msg->pose.orientation.y,
+                    msg->pose.orientation.z);
+    cMatrix3d rotM;
+    rot.toRotMat(rotM);
+    trans.setLocalRot(rotM);
+}
 
 void Transforms::transformCallback(geometry_msgs::PoseStampedConstPtr msg){
     if (msg->header.stamp.isZero()) {
@@ -67,16 +79,38 @@ void Transforms::transformCallback(geometry_msgs::PoseStampedConstPtr msg){
     }
     isMsgValid_ = true;
 
-    transformation_.setLocalPos(cVector3d(msg->pose.position.x,
-                                        msg->pose.position.y,
-                                        msg->pose.position.z));
-    cQuaternion rot(msg->pose.orientation.w,
-                    msg->pose.orientation.x,
-                    msg->pose.orientation.y,
-                    msg->pose.orientation.z);
-    cMatrix3d rotM;
-    rot.toRotMat(rotM);
-    transformation_.setLocalRot(rotM);
+    if (!initialized_) {
+        convertPoseStampedMsgTocTransform(filteredTransform_, msg);
+        initialized_ = true;
+        return;
+    }
+
+    if (isFiltered_){
+        chai3d::cTransform currentTransform;
+        convertPoseStampedMsgTocTransform(currentTransform, msg);
+
+        // Blend positions
+        chai3d::cVector3d blended_pos = alpha_ * currentTransform.getLocalPos() + (1 - alpha_) * filteredTransform_.getLocalPos();
+
+        // Blend orientations using SLERP
+        chai3d::cQuaternion q_prev, q_curr;
+        q_prev.fromRotMat(filteredTransform_.getLocalRot());
+        q_curr.fromRotMat(currentTransform.getLocalRot());
+        chai3d::cQuaternion q_blend;
+        q_blend.slerp(1.0-alpha_, q_prev, q_curr);
+
+        // Final filtered transform
+        chai3d::cMatrix3d blended_rot;
+        q_blend.toRotMat(blended_rot);
+        filteredTransform_.setLocalPos(blended_pos);
+        filteredTransform_.setLocalRot(blended_rot);
+
+        transformation_ = filteredTransform_;
+    }
+
+    else{
+        convertPoseStampedMsgTocTransform(transformation_, msg);
+    }
 }
 
 void Transforms::referenceTransformCallback(geometry_msgs::PoseStampedConstPtr msg){
@@ -87,16 +121,38 @@ void Transforms::referenceTransformCallback(geometry_msgs::PoseStampedConstPtr m
     }
     isMsgValid_ = true;
 
-    reference_trans_.setLocalPos(cVector3d(msg->pose.position.x,
-                                        msg->pose.position.y,
-                                        msg->pose.position.z));
-    cQuaternion rot(msg->pose.orientation.w,
-                    msg->pose.orientation.x,
-                    msg->pose.orientation.y,
-                    msg->pose.orientation.z);
-    cMatrix3d rotM;
-    rot.toRotMat(rotM);
-    reference_trans_.setLocalRot(rotM);
+    if (!initialized_) {
+        convertPoseStampedMsgTocTransform(filteredReferenceTransform_, msg);
+        initialized_ = true;
+        return;
+    }
+
+    if (isFiltered_){
+        chai3d::cTransform currentReferenceTransform;
+        convertPoseStampedMsgTocTransform(currentReferenceTransform, msg);
+
+        // Blend positions
+        chai3d::cVector3d blended_pos = alpha_ * currentReferenceTransform.getLocalPos() + (1 - alpha_) * filteredReferenceTransform_.getLocalPos();
+
+        // Blend orientations using SLERP
+        chai3d::cQuaternion q_prev, q_curr;
+        q_prev.fromRotMat(filteredReferenceTransform_.getLocalRot());
+        q_curr.fromRotMat(currentReferenceTransform.getLocalRot());
+        chai3d::cQuaternion q_blend;
+        q_blend.slerp(1.0 - alpha_, q_prev, q_curr);
+
+        // Final filtered transform
+        chai3d::cMatrix3d blended_rot;
+        q_blend.toRotMat(blended_rot);
+        filteredReferenceTransform_.setLocalPos(blended_pos);
+        filteredReferenceTransform_.setLocalRot(blended_rot);
+
+        reference_trans_ = filteredReferenceTransform_;
+    }
+
+    else{
+        convertPoseStampedMsgTocTransform(reference_trans_, msg);
+    }
 }
 
 afTFPlugin::afTFPlugin(){
@@ -188,6 +244,7 @@ void printBtTransform(const btTransform &transform) {
     std::cout << "Rotation (Euler angles): ["
               << roll << ", " << pitch << ", " << yaw << "]" << std::endl;
 }
+
 void afTFPlugin::moveRigidBody(const Transforms* transformINFO, const btTransform transform, double dt){
     btTransform command;
     if (transformINFO->parentRB_){
@@ -236,7 +293,7 @@ void afTFPlugin::physicsUpdate(double dt){
         if (m_transformList[i]->transformType_ == TransformationType::FIXED ||
         m_transformList[i]->transformType_ == TransformationType::ROS){
             chai3d::cTransform ref_inv;
-            if(m_transformList[i]->isReference){
+            if(m_transformList[i]->isReference_){
                 ref_inv = m_transformList[i]->reference_trans_;
                 ref_inv.invert();
             }
@@ -347,9 +404,16 @@ void afTFPlugin::readTransformationFromYaml(Transforms* transformINFO, YAML::Nod
         transformINFO->transformSub_ = transformINFO->rosNode_->subscribe(topicName, 1, &Transforms::transformCallback, transformINFO);
 
         if (node[transformINFO->name_]["reference rostopic name"]){
-            transformINFO->isReference = true;
+            transformINFO->isReference_ = true;
             topicName = node[transformINFO->name_]["reference rostopic name"].as<string>();
             transformINFO->referenceSub_ = transformINFO->rosNode_->subscribe(topicName, 1, &Transforms::referenceTransformCallback, transformINFO);
+        }
+
+        if (node[transformINFO->name_]["filter"]){
+                transformINFO->isFiltered_ = true;
+                if (node[transformINFO->name_]["filter"]["alpha"]){
+                transformINFO->alpha_ = node[transformINFO->name_]["filter"]["alpha"].as<double>();
+            }
         }
     }
 }
