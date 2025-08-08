@@ -179,7 +179,7 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
 
     // Loading options 
     string tf_list_path = var_map["tf_list"].as<string>();
-    m_mute = var_map["mute"].as<bool>();
+    bool mute = var_map["mute"].as<bool>();
 
     // Define path
     string file_path = __FILE__;
@@ -193,7 +193,27 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
     m_worldPtr->m_bulletWorld->getSolverInfo().m_erp2 = 1.0; // improve out of plane error of joints
 
     // Load audio
-    m_audioFilepath = m_current_filepath + "/../example/sounds/tone_440hz.wav";
+    string audioFilepath = m_current_filepath + "/../example/sounds/tone_440hz.wav";
+    if (!mute){
+        m_audioDevice = new cAudioDevice();
+        m_mainCamera = m_worldPtr->getCamera("main_camera");
+        m_mainCamera->getInternalCamera()->attachAudioDevice(m_audioDevice);
+        
+        m_audioBuffer = new cAudioBuffer();
+        if (m_audioBuffer->loadFromFile(audioFilepath)){
+            m_audioSource = new cAudioSource();
+            m_audioSource->setAudioBuffer(m_audioBuffer);
+            m_audioSource->setLoop(true);
+            m_audioState = AudioState::STOPPED;
+        }
+        else{
+            delete m_audioSource;
+            delete m_audioBuffer;
+            m_audioSource = nullptr;
+            m_audioBuffer = nullptr;
+            cerr << "FAILED TO LOAD Beep AUDIO FROM " << audioFilepath << endl;
+        }
+    }
     
     // When config file was defined
     if(!tf_list_path.empty()){
@@ -303,12 +323,17 @@ void afTFPlugin::physicsUpdate(double dt){
             moveRigidBody(m_transformList[i], transform, dt);
         }
 
-        if (!m_transformList[i]->isMsgValid_ && !m_mute){
-            string command = "aplay " + m_audioFilepath + " >/dev/null 2>&1 &";
-            system(command.c_str());
+        if (!m_transformList[i]->isMsgValid_  && m_audioSource){
+            if (m_audioState == AudioState::STOPPED){
+                m_audioSource->play();
+                m_audioState = AudioState::PLAYING;
+            }
         }
         else{
-            system("pkill -f aplay"); // Be careful — this kills all 'aplay'
+            if (m_audioState == AudioState::PLAYING){
+                m_audioSource->stop();
+                m_audioState = AudioState::STOPPED;
+            }
         }
     }
 }

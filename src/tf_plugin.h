@@ -53,6 +53,10 @@
 
 #include <cstdlib>
 
+enum class AudioState{
+    STOPPED = 0,
+    PLAYING = 1
+};
 
 namespace boost{
     namespace program_options{
@@ -95,7 +99,6 @@ class Transforms{
 
         // Audio related
         bool isMsgValid_ = true;
-
         void convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, geometry_msgs::PoseStampedConstPtr msg);
         void transformCallback(geometry_msgs::PoseStampedConstPtr msg);
         void referenceTransformCallback(geometry_msgs::PoseStampedConstPtr msg);
@@ -127,13 +130,16 @@ class afTFPlugin: public afSimulatorPlugin{
 
         // Path
         string m_current_filepath;
-
+        
         // Controllable object
         vector<Transforms*> m_transformList;
 
-        // Path to the beep sound
-        bool m_mute = false;
+        afCameraPtr m_mainCamera; 
         string m_audioFilepath;
+        chai3d::cAudioSource* m_audioSource = nullptr;
+        chai3d::cAudioBuffer* m_audioBuffer = nullptr;
+        chai3d::cAudioDevice* m_audioDevice = nullptr;
+        AudioState m_audioState;
 
 };
 
