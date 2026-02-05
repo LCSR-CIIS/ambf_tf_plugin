@@ -178,7 +178,7 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
     }
 
     // Loading options 
-    string tf_list_path = var_map["tf_list"].as<string>();
+    m_tf_list_path = var_map["tf_list"].as<string>();
     bool mute = var_map["mute"].as<bool>();
 
     // Define path
@@ -216,8 +216,8 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
     }
     
     // When config file was defined
-    if(!tf_list_path.empty()){
-        int result = readTFListYaml(tf_list_path);
+    if(!m_tf_list_path.empty()){
+        int result = readTFListYaml(m_tf_list_path);
 
         // Check for the stored transformation list and if the type is INITIAL, move the corresponding object
         for (size_t i = 0; i < m_transformList.size(); i++){
@@ -237,6 +237,13 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
 }
 
 void afTFPlugin::keyboardUpdate(GLFWwindow* a_window, int a_key, int a_scancode, int a_action, int a_mods){ 
+    // Reload a configuration file when 'ALT + R' key are pressed
+    if (a_action == GLFW_MOD_ALT){
+        if (a_key == GLFW_KEY_R){
+            cerr << "> Reloading the user defined tf list..." << endl;
+            readTFListYaml(m_tf_list_path);
+        }
+    }
 }
 
 void afTFPlugin::graphicsUpdate(){

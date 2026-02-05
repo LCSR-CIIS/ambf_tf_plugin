@@ -130,6 +130,7 @@ class afTFPlugin: public afSimulatorPlugin{
 
         // Path
         string m_current_filepath;
+        string m_tf_list_path;
         
         // Controllable object
         vector<Transforms*> m_transformList;

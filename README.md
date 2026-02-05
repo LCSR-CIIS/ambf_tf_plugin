@@ -60,6 +60,9 @@ Predefined transformation can be written in 4x4 matrix or in `position`/`orienta
 position: {x: 0.0, y:0.0, z:0.0}, orientation: {r: 0.0, p: 0.0, y:0.0}
 ```
 
+## Keyboard shortcuts
+1. `Alt` + `R` : Reload the configuration file. 
+
 
 ## Known problem
 - If the object is `static`, the object will not move. Add mass and increase the friction/damping if needed.
