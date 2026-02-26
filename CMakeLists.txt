@@ -35,13 +35,45 @@
 #
 #  $Author: Hisashi Ishida $
 
-cmake_minimum_required (VERSION 3.1)
+cmake_minimum_required (VERSION 3.3)
 project (ambf_tf_plugin)
 
 set(CMAKE_CXX_STANDARD 11)
 
 find_package(AMBF)
 find_package(Boost COMPONENTS program_options filesystem)
+
+set (ROS1_depends ambf_server)
+
+find_package (catkin QUIET
+  COMPONENTS ${ROS1_depends})
+
+if (catkin_FOUND)
+    message ("Found ROS 1")
+    set (AMBF_ROS_VERSION 1)
+    include_directories(include ${catkin_INCLUDE_DIRS})
+
+    catkin_package(
+      INCLUDE_DIRS .
+      LIBRARIES ${PROJECT_NAME}
+      CATKIN_DEPENDS
+    )
+    message("---> LIBS " ${catkin_INCLUDE_DIRS})
+    message("---> FOUND ? " ${catkin_vdrilling_msgs_FOUND})
+
+else(catkin_FOUND)
+  # look for ROS2
+  set (AMBF_ROS_VERSION 2)
+  find_package (ament_cmake QUIET)
+  if (ament_cmake_FOUND)
+      set (AMBF_ROS_VERSION 2)
+      message ("Found ROS 2")
+      set (ROS2_depends rclcpp geometry_msgs ambf_server AMBF)
+      foreach (_dep ${ROS2_depends})
+        find_package (${_dep} REQUIRED)
+      endforeach()
+  endif (ament_cmake_FOUND)
+endif(catkin_FOUND)
 
 include_directories(${AMBF_INCLUDE_DIRS})
 include_directories(${Boost_INCLUDE_DIRS})
@@ -55,13 +87,18 @@ add_library(ambf_tf_plugin SHARED
     src/tf_plugin.h
     )
 
-target_link_libraries (ambf_tf_plugin ${Boost_LIBRARIES} ${AMBF_LIBRARIES})
-set_property(TARGET ambf_tf_plugin PROPERTY POSITION_INDEPENDENT_CODE TRUE)
-
-if(NOT BUILD_PLUGIN_WITH_ROS)
-    set(BUILD_PLUGIN_WITH_ROS TRUE)
+if (AMBF_ROS_VERSION EQUAL 1)
+    add_dependencies (ambf_tf_plugin ${catkin_EXPORTED_TARGETS})
+    target_link_libraries (ambf_tf_plugin ${Boost_LIBRARIES} ${AMBF_LIBRARIES})
+else ()
+  install (
+    TARGETS ambf_tf_plugin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+    )
+  ament_target_dependencies (ambf_tf_plugin ${ROS2_depends})
+  ament_package ()
 endif()
 
-if(BUILD_PLUGIN_WITH_ROS)
-    add_definitions(-DBUILD_WITH_ROS)
-endif()
+# set_property(TARGET ambf_tf_plugin PROPERTY POSITION_INDEPENDENT_CODE TRUE)

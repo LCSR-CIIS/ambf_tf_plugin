@@ -58,7 +58,7 @@ void convertFloatTobtMatrix(double rotation[3][3], btMatrix3x3 btRotationMatrix)
 Transforms::Transforms(){   
 }
 
-void Transforms::convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, geometry_msgs::PoseStampedConstPtr msg){
+void Transforms::convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) msg){
     trans.setLocalPos(cVector3d(msg->pose.position.x,
                                             msg->pose.position.y,
                                             msg->pose.position.z));
@@ -71,9 +71,9 @@ void Transforms::convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, ge
     trans.setLocalRot(rotM);
 }
 
-void Transforms::transformCallback(geometry_msgs::PoseStampedConstPtr msg){
-    if (msg->header.stamp.isZero()) {
-        ROS_WARN_THROTTLE(1.0, "Received PoseStamped with invalid (zero) timestamp");
+void Transforms::transformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) msg){
+    if (msg->header.stamp.sec ==0 && msg->header.stamp.nanosec == 0) {
+        cerr << "Received PoseStamped with invalid (zero) timestamp" << endl;
         isMsgValid_ = false;
         return;
     }
@@ -113,9 +113,9 @@ void Transforms::transformCallback(geometry_msgs::PoseStampedConstPtr msg){
     }
 }
 
-void Transforms::referenceTransformCallback(geometry_msgs::PoseStampedConstPtr msg){
-    if (msg->header.stamp.isZero()) {
-        ROS_WARN_THROTTLE(1.0, "Received PoseStamped with invalid (zero) timestamp");
+void Transforms::referenceTransformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) msg){
+    if (msg->header.stamp.sec ==0 && msg->header.stamp.nanosec == 0) {
+        cerr << "Received PoseStamped with invalid (zero) timestamp" << endl;
         isMsgValid_ = false;
         return;
     }
@@ -431,14 +431,16 @@ void afTFPlugin::readTransformationFromYaml(Transforms* transformINFO, YAML::Nod
 
     else if (transformINFO->transformType_ == TransformationType::ROS){
         // Set up the subscriber
-        transformINFO->rosNode_ = afROSNode::getNode();
+        transformINFO->rosNode_ = afROSNode::getNodeAndRegister("AMBF_TF_Plugin_Node");
         string topicName = node[transformINFO->name_]["rostopic name"].as<string>();
-        transformINFO->transformSub_ = transformINFO->rosNode_->subscribe(topicName, 1, &Transforms::transformCallback, transformINFO);
+        ambf_ral::create_subscriber<AMBF_RAL_MSG(geometry_msgs, PoseStamped), Transforms>
+            (transformINFO->transformSub_, transformINFO->rosNode_, topicName, 1, &Transforms::transformCallback, transformINFO);
 
         if (node[transformINFO->name_]["reference rostopic name"]){
             transformINFO->isReference_ = true;
             topicName = node[transformINFO->name_]["reference rostopic name"].as<string>();
-            transformINFO->referenceSub_ = transformINFO->rosNode_->subscribe(topicName, 1, &Transforms::referenceTransformCallback, transformINFO);
+            ambf_ral::create_subscriber<AMBF_RAL_MSG(geometry_msgs, PoseStamped), Transforms>
+                (transformINFO->referenceSub_, transformINFO->rosNode_, topicName, 1, &Transforms::referenceTransformCallback, transformINFO);
         }
 
         if (node[transformINFO->name_]["filter"]){

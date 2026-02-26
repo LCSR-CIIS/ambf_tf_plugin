@@ -42,16 +42,23 @@
 // To silence warnings on MacOS
 #define GL_SILENCE_DEPRECATION
 #include <afFramework.h>
+#include <ambf_server/ambf_ral_config.h>
+#include <ambf_server/RosComBase.h>
 #include <version_1_0/adf_loader_1_0.h>
 #include <afConversions.h>
 #include <yaml-cpp/yaml.h>
 #include <boost/program_options.hpp>
+#include <cstdlib>
 
+#if AMBF_ROS1
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
-#include <ambf_server/RosComBase.h>
 
-#include <cstdlib>
+#elif AMBF_ROS2
+#include <ambf_server/ambf_ral.h>
+#include <rclcpp/rclcpp.hpp>
+#include "geometry_msgs/msg/pose_stamped.hpp"
+#endif
 
 enum class AudioState{
     STOPPED = 0,
@@ -93,15 +100,21 @@ class Transforms{
         double alpha_ = 0.1;
 
         // ROS related
-        ros::NodeHandle* rosNode_;
+        ambf_ral::node_ptr_t rosNode_;
+        #if AMBF_ROS1
         ros::Subscriber transformSub_;
         ros::Subscriber referenceSub_;
 
+        #elif AMBF_ROS2
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr transformSub_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr referenceSub_;
+        #endif
+
         // Audio related
         bool isMsgValid_ = true;
-        void convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, geometry_msgs::PoseStampedConstPtr msg);
-        void transformCallback(geometry_msgs::PoseStampedConstPtr msg);
-        void referenceTransformCallback(geometry_msgs::PoseStampedConstPtr msg);
+        void convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, AMBF_RAL_MSG_PTR(geometry_msgs,PoseStamped) msg);
+        void transformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) msg);
+        void referenceTransformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) msg);
 };
 
 // Convertion function
