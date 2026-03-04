@@ -5,11 +5,12 @@ AMBF plugin for transformations. This plugin directly apply transformation to th
 Let's call the absolute location of this package as **<plugin_path>**. E.g. if you cloned this repo in your home folder, **<plugin_path>** = `~/ambf_tf_plugin/` OR `/home/<username>/ambf_tf_plugin`.
 
 ### 1.1 clone and build the repository
+For `ROS2`,
 ```bash
+cd ~/ambf_ws/src # Go into your workspace
 git clone git@github.com:LCSR-CIIS/ambf_tf_plugin.git
-cd ambf_tf_plugin
-mkdir build && cd 
-make
+cd ~/ambf_ws/
+colcon_build
 ```
 
 ## 2. How to run the plugin
