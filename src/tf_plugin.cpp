@@ -72,11 +72,11 @@ void Transforms::convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, AM
 }
 
 void Transforms::transformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) msg){
-    if (msg->header.stamp.sec ==0 && msg->header.stamp.nanosec == 0) {
-        cerr << "Received PoseStamped with invalid (zero) timestamp" << endl;
-        isMsgValid_ = false;
-        return;
-    }
+    // if (msg->header.stamp.sec ==0 && msg->header.stamp.nanosec == 0) {
+    //     cerr << "Received PoseStamped with invalid (zero) timestamp" << endl;
+    //     isMsgValid_ = false;
+    //     return;
+    // }
     isMsgValid_ = true;
 
     if (!initialized_) {
@@ -114,11 +114,11 @@ void Transforms::transformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) 
 }
 
 void Transforms::referenceTransformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) msg){
-    if (msg->header.stamp.sec ==0 && msg->header.stamp.nanosec == 0) {
-        cerr << "Received PoseStamped with invalid (zero) timestamp" << endl;
-        isMsgValid_ = false;
-        return;
-    }
+    // if (msg->header.stamp.sec ==0 && msg->header.stamp.nanosec == 0) {
+    //     cerr << "Received PoseStamped with invalid (zero) timestamp" << endl;
+    //     isMsgValid_ = false;
+    //     return;
+    // }
     isMsgValid_ = true;
 
     if (!initialized_) {
@@ -319,6 +319,7 @@ void afTFPlugin::physicsUpdate(double dt){
     for (size_t i = 0; i < m_transformList.size(); i++){
         if (m_transformList[i]->transformType_ == TransformationType::FIXED ||
         m_transformList[i]->transformType_ == TransformationType::ROS){
+            ambf_ral::spin_some(m_transformList[i]->rosNode_);
             chai3d::cTransform ref_inv;
             if(m_transformList[i]->isReference_){
                 ref_inv = m_transformList[i]->reference_trans_;
