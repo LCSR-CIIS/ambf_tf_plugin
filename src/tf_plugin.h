@@ -102,8 +102,8 @@ class Transforms{
         // ROS related
         ambf_ral::node_ptr_t rosNode_;
         #if AMBF_ROS1
-        ros::Subscriber transformSub_;
-        ros::Subscriber referenceSub_;
+        std::shared_ptr<ros::Subscriber> transformSub_;
+        std::shared_ptr<ros::Subscriber> referenceSub_;
 
         #elif AMBF_ROS2
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr transformSub_;
