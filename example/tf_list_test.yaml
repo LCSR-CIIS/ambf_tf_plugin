@@ -11,25 +11,21 @@ TF World-Test:
   parent: World # World: AMBF world origin or Name of rigidBody
   child: Cube
   type: INITIAL # {FIXED, INITIAL, ROS}
-  transformation: [
-  [ 1.0, 0.0, 0.0, 0.2], 
-  [ 0.0, 1.0, 0.0, 0.0],
-  [ 0.0, 0.0, 1.0, 0.0],
-  [ 0.0, 0.0, 0.0, 1.0]]
+  transformation:
+    position: {x: 0.10526419, y: -0.05590484, z: 0.01965737}
+    orientation: {r: 1.5983165, p: 1.1028412, y: 0.0366371 }
 
 TF Cube-Sphere:
   parent: Cube # World: AMBF world origin or Name of rigidBody
   child: Sphere
   type: FIXED # {FIXED, INITIAL, ROS}
-  transformation: [
-  [ 1.0, 0.0, 0.0, 0.0], 
-  [ 0.0, 1.0, 0.0, 0.6],
-  [ 0.0, 0.0, 1.0, 0.6],
-  [ 0.0, 0.0, 0.0, 1.0]]
+  transformation: 
+    position: {x: 0.10526419, y: -0.05590484, z: 0.01965737}
+    orientation: {r: 1.5983165, p: 1.1028412, y: 0.0366371 }
 
 TF ROS-Test:
-  parent: Cube
-  child: ROS-sphere
+  parent: World
+  child: Cube
   type: ROS
   rostopic name: /test_topic
 
