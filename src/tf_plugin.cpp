@@ -376,10 +376,20 @@ int afTFPlugin::readTFListYaml(string file_path){
                 // If the parent is "World" then keep the parentRB_ as nullptr
                 if (node[transformName]["parent"].as<string>() != "World"){
                     transformINFO->parentRB_ = m_worldPtr->getRigidBody(node[transformName]["parent"].as<string>());
+                    if (!transformINFO->parentRB_){
+                        cerr << "[ERROR!!] Parent rigid body " << node[transformName]["parent"].as<string>() << " not found in the world!" << endl;
+                        delete transformINFO;
+                        return -1;
+                    }
                 }
                 
                 // Store child information
                 transformINFO->childRB_ = m_worldPtr->getRigidBody(node[transformName]["child"].as<string>());
+                if (!transformINFO->childRB_){
+                    cerr << "[ERROR!!] Child rigid body " << node[transformName]["child"].as<string>() << " not found in the world!" << endl;
+                    delete transformINFO;
+                    return -1;
+                }
 
                 // Store transformation 
                 readTransformationFromYaml(transformINFO, node);
