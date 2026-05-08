@@ -226,6 +226,7 @@ int afTFPlugin::init(int argc, char** argv, const afWorldPtr a_afWorld){
                 moveRigidBody(m_transformList[i], transform, 0.001);
             }
         }
+        cerr << "> TF plugin initialized successfully!" << endl;
         return result;
     }
 
@@ -355,6 +356,7 @@ int afTFPlugin::readTFListYaml(string file_path){
     //Load the user defined object here. 
     YAML::Node node = YAML::LoadFile(file_path);
     
+    
     if (node["transformations"]){
         for (size_t i = 0; i < node["transformations"].size(); i++){
             Transforms* transformINFO = new Transforms();
@@ -398,12 +400,14 @@ int afTFPlugin::readTFListYaml(string file_path){
                 m_transformList.push_back(transformINFO);
             }
             else{
+                cerr << "[ERROR!!] Transformation " << transformName << " not found in the yaml file!" << endl;
                 return -1;
             }
         }
         return 1;
     }
     else {
+        cerr << "[ERROR!!] No transformation list found in the yaml file!" << endl;
         return -1;
     }
 }
