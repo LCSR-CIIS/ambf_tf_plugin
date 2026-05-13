@@ -12,18 +12,10 @@ TF Anspoch_drill:
   type: ROS
   rostopic name: /atracsys/Anspoch_drill/measured_cp
 
-# TF EE_cube:
-#   parent: EE
-#   child: Cube
-#   type: FIXED
-#   transformation:
-#     position: {x: 0.10526419, y: -0.05590484, z: 0.01965737}
-#     orientation: {r: 1.5983165, p: 1.1028412, y: 0.0366371 }
-
 TF marker_body-drill_tip:
-  parent: Cube
+  parent: marker_body
   child: drill_tip
   type: FIXED
   transformation: 
-    position: {x: 0.143492, y: -0.132029, z: -0.0561758}
+    position: {x: 0.113068, y: -0.160243, z: 0.0842156}
     orientation: {r: 0.0, p: 0.0, y: 0.0}
