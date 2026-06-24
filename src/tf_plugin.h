@@ -77,7 +77,15 @@ using namespace std;
 using namespace ambf;
 
 enum class TransformationType{
-    FIXED=0, INITIAL=1, ROS=2
+    FIXED=0, INITIAL=1, ROS=2, ROS_RELATIVE=3
+};
+
+enum class FrameConversion{
+    NONE=0,
+    LPS_TO_RPS=1,
+    RPS_TO_LPS=2,
+    OPENGL_TO_OPENCV=3,
+    OPENCV_TO_OPENGL=4
 };
 
 class Transforms{
@@ -91,6 +99,16 @@ class Transforms{
         chai3d::cTransform reference_trans_;
 
         bool isReference_ = false;
+
+        // Initial world transform for ROS_RELATIVE type
+        btTransform initialChildTransform_;
+        bool isInitialCaptured_ = false;
+
+        // Optional frame conversion applied to subscribed pose before use
+        FrameConversion frameConversion_ = FrameConversion::NONE;
+        bool invertSubscribed_ = false;
+        bool hasPreTransform_ = false;
+        btTransform preTransform_;
 
         // Flag if need to be filtered
         bool isFiltered_ = false;
@@ -132,6 +150,7 @@ class afTFPlugin: public afSimulatorPlugin{
 
     protected:
         void moveRigidBody(const Transforms*, const btTransform transform, double dt);
+        void applyWorldTransform(const Transforms* transformINFO, const btTransform& worldCommand, double dt);
 
         int readTFListYaml(string file_path);
         void readTransformationFromYaml(Transforms* transformINFO, YAML::Node& node);

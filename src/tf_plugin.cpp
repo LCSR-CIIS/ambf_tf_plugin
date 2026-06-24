@@ -55,7 +55,36 @@ void convertFloatTobtMatrix(double rotation[3][3], btMatrix3x3 btRotationMatrix)
     );
 }
 
-Transforms::Transforms(){   
+// Apply a diagonal frame conversion M = diag(sx, sy, sz) to a btTransform.
+// Position: component-wise scale. Rotation: M * R * M (each entry scaled by sx_i * sx_j).
+// All supported conversions are self-inverse (M^2 = I), so the same function handles both directions.
+static btTransform applyDiagFrameConv(const btTransform& t, btScalar sx, btScalar sy, btScalar sz){
+    btVector3 o = t.getOrigin();
+    o.setValue(sx * o.x(), sy * o.y(), sz * o.z());
+    const btMatrix3x3& r = t.getBasis();
+    btScalar s[3] = {sx, sy, sz};
+    btMatrix3x3 converted(
+        s[0]*r[0][0]*s[0], s[0]*r[0][1]*s[1], s[0]*r[0][2]*s[2],
+        s[1]*r[1][0]*s[0], s[1]*r[1][1]*s[1], s[1]*r[1][2]*s[2],
+        s[2]*r[2][0]*s[0], s[2]*r[2][1]*s[1], s[2]*r[2][2]*s[2]
+    );
+    return btTransform(converted, o);
+}
+
+static btTransform applyFrameConversion(FrameConversion conv, const btTransform& t){
+    switch(conv){
+        case FrameConversion::LPS_TO_RPS:
+        case FrameConversion::RPS_TO_LPS:
+            return applyDiagFrameConv(t, -1, 1, 1);
+        case FrameConversion::OPENGL_TO_OPENCV:
+        case FrameConversion::OPENCV_TO_OPENGL:
+            return applyDiagFrameConv(t, 1, -1, -1);
+        default:
+            return t;
+    }
+}
+
+Transforms::Transforms(){
 }
 
 void Transforms::convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) msg){
@@ -78,7 +107,6 @@ void Transforms::transformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) 
         return;
     }
     isMsgValid_ = true;
-
     if (!initialized_) {
         convertPoseStampedMsgTocTransform(filteredTransform_, msg);
         initialized_ = true;
@@ -97,7 +125,7 @@ void Transforms::transformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) 
         q_prev.fromRotMat(filteredTransform_.getLocalRot());
         q_curr.fromRotMat(currentTransform.getLocalRot());
         chai3d::cQuaternion q_blend;
-        q_blend.slerp(1.0-alpha_, q_prev, q_curr);
+        q_blend.slerp(alpha_, q_prev, q_curr);
 
         // Final filtered transform
         chai3d::cMatrix3d blended_rot;
@@ -139,7 +167,7 @@ void Transforms::referenceTransformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, Pose
         q_prev.fromRotMat(filteredReferenceTransform_.getLocalRot());
         q_curr.fromRotMat(currentReferenceTransform.getLocalRot());
         chai3d::cQuaternion q_blend;
-        q_blend.slerp(1.0 - alpha_, q_prev, q_curr);
+        q_blend.slerp(alpha_, q_prev, q_curr);
 
         // Final filtered transform
         chai3d::cMatrix3d blended_rot;
@@ -316,7 +344,28 @@ void afTFPlugin::moveRigidBody(const Transforms* transformINFO, const btTransfor
 }
 
 
-void afTFPlugin::physicsUpdate(double dt){   
+void afTFPlugin::applyWorldTransform(const Transforms* transformINFO, const btTransform& worldCommand, double dt){
+    if (transformINFO->childRB_->m_bulletRigidBody->isStaticOrKinematicObject()){
+        transformINFO->childRB_->m_bulletRigidBody->getMotionState()->setWorldTransform(worldCommand);
+        transformINFO->childRB_->m_bulletRigidBody->setWorldTransform(worldCommand);
+    }
+    else{
+        btTransform curr_trans = transformINFO->childRB_->getCOMTransform();
+        btVector3 pCommand = transformINFO->childRB_->m_controller.computeOutput<btVector3>(curr_trans.getOrigin(), worldCommand.getOrigin(), dt);
+        btVector3 rCommand = transformINFO->childRB_->m_controller.computeOutput<btVector3>(curr_trans.getBasis(), worldCommand.getBasis(), dt);
+
+        if (transformINFO->childRB_->m_controller.m_positionOutputType == afControlType::FORCE){
+            transformINFO->childRB_->m_bulletRigidBody->applyCentralForce(pCommand);
+            transformINFO->childRB_->m_bulletRigidBody->applyTorque(rCommand);
+        }
+        else if (transformINFO->childRB_->m_controller.m_positionOutputType == afControlType::VELOCITY){
+            transformINFO->childRB_->m_bulletRigidBody->setLinearVelocity(pCommand);
+            transformINFO->childRB_->m_bulletRigidBody->setAngularVelocity(rCommand);
+        }
+    }
+}
+
+void afTFPlugin::physicsUpdate(double dt){
     for (size_t i = 0; i < m_transformList.size(); i++){
         if (m_transformList[i]->transformType_ == TransformationType::FIXED ||
         m_transformList[i]->transformType_ == TransformationType::ROS){
@@ -330,8 +379,42 @@ void afTFPlugin::physicsUpdate(double dt){
             }
             chai3d::cTransform ctrans = ref_inv * m_transformList[i]->transformation_;
             btTransform transform = to_btTransform(ctrans);
+            if (m_transformList[i]->frameConversion_ != FrameConversion::NONE)
+                transform = applyFrameConversion(m_transformList[i]->frameConversion_, transform);
+            if (m_transformList[i]->invertSubscribed_)
+                transform = transform.inverse();
+            if (m_transformList[i]->hasPreTransform_)
+                transform = m_transformList[i]->preTransform_ * transform;
 
             moveRigidBody(m_transformList[i], transform, dt);
+        }
+
+        else if (m_transformList[i]->transformType_ == TransformationType::ROS_RELATIVE){
+            ambf_ral::spin_some(m_transformList[i]->rosNode_);
+
+            btTransform subscribedDelta = to_btTransform(m_transformList[i]->transformation_);
+            if (m_transformList[i]->frameConversion_ != FrameConversion::NONE)
+                subscribedDelta = applyFrameConversion(m_transformList[i]->frameConversion_, subscribedDelta);
+            if (m_transformList[i]->invertSubscribed_)
+                subscribedDelta = subscribedDelta.inverse();
+
+            const btTransform& T0 = m_transformList[i]->initialChildTransform_;
+            btVector3   deltaPos = subscribedDelta.getOrigin();
+            btMatrix3x3 deltaRot = subscribedDelta.getBasis();
+
+            if (m_transformList[i]->hasPreTransform_){
+                // Treat pre_transform as a change-of-basis: similarity transform for rotation,
+                // plain rotation for position (avoids contamination by T0's rotation).
+                const btMatrix3x3 R_P = m_transformList[i]->preTransform_.getBasis();
+                deltaPos = R_P * deltaPos;
+                deltaRot = R_P * deltaRot * R_P.transpose();
+            }
+
+            // Position: add world-frame delta directly (no T0 rotation applied to delta).
+            // Rotation: apply delta in world frame on top of the child's initial rotation.
+            btTransform worldTarget(deltaRot * T0.getBasis(), T0.getOrigin() + deltaPos);
+
+            applyWorldTransform(m_transformList[i], worldTarget, dt);
         }
 
         if (!m_transformList[i]->isMsgValid_  && m_audioSource){
@@ -369,10 +452,12 @@ int afTFPlugin::readTFListYaml(string file_path){
                 // Store transformation type
                 if (node[transformName]["type"].as<string>() == "FIXED")
                     transformINFO->transformType_ = TransformationType::FIXED;
-                if (node[transformName]["type"].as<string>() =="INITIAL")
+                else if (node[transformName]["type"].as<string>() =="INITIAL")
                     transformINFO->transformType_ = TransformationType::INITIAL;
-                if (node[transformName]["type"].as<string>() == "ROS")
+                else if (node[transformName]["type"].as<string>() == "ROS")
                     transformINFO->transformType_ = TransformationType::ROS;
+                else if (node[transformName]["type"].as<string>() == "ROS_RELATIVE")
+                    transformINFO->transformType_ = TransformationType::ROS_RELATIVE;
 
                 // Store parent information
                 // If the parent is "World" then keep the parentRB_ as nullptr
@@ -409,6 +494,38 @@ int afTFPlugin::readTFListYaml(string file_path){
     else {
         cerr << "[ERROR!!] No transformation list found in the yaml file!" << endl;
         return -1;
+    }
+}
+
+static void parseFrameConversion(Transforms* transformINFO, YAML::Node& node){
+    if (!node[transformINFO->name_]["convert frame"]) return;
+    string conv = node[transformINFO->name_]["convert frame"].as<string>();
+    if      (conv == "LPS_to_RPS")       transformINFO->frameConversion_ = FrameConversion::LPS_TO_RPS;
+    else if (conv == "RPS_to_LPS")       transformINFO->frameConversion_ = FrameConversion::RPS_TO_LPS;
+    else if (conv == "OpenGL_to_OpenCV") transformINFO->frameConversion_ = FrameConversion::OPENGL_TO_OPENCV;
+    else if (conv == "OpenCV_to_OpenGL") transformINFO->frameConversion_ = FrameConversion::OPENCV_TO_OPENGL;
+    else cerr << "[WARNING] Unknown convert frame value: " << conv << endl;
+}
+
+static void parseSubscribedModifiers(Transforms* transformINFO, YAML::Node& node){
+    const string& name = transformINFO->name_;
+
+    if (node[name]["invert"] && node[name]["invert"].as<bool>())
+        transformINFO->invertSubscribed_ = true;
+
+    if (node[name]["pre transform"]){
+        YAML::Node pt = node[name]["pre transform"];
+        chai3d::cTransform cPre;
+        if (pt["position"] && pt["orientation"]){
+            YAML::Node ptPos = pt["position"];
+            YAML::Node ptOri = pt["orientation"];
+            cVector3d trans = to_cVector3d(adf_loader_1_0::ADFUtils::positionFromNode(&ptPos));
+            cMatrix3d rot   = to_cMatrix3d(adf_loader_1_0::ADFUtils::rotationFromNode(&ptOri));
+            cPre.setLocalPos(trans);
+            cPre.setLocalRot(rot);
+        }
+        transformINFO->preTransform_ = to_btTransform(cPre);
+        transformINFO->hasPreTransform_ = true;
     }
 }
 
@@ -466,6 +583,31 @@ void afTFPlugin::readTransformationFromYaml(Transforms* transformINFO, YAML::Nod
                 transformINFO->alpha_ = node[transformINFO->name_]["filter"]["alpha"].as<double>();
             }
         }
+
+        parseFrameConversion(transformINFO, node);
+        parseSubscribedModifiers(transformINFO, node);
+    }
+
+    else if (transformINFO->transformType_ == TransformationType::ROS_RELATIVE){
+        // Same subscriber setup as ROS
+        transformINFO->rosNode_ = afROSNode::getNodeAndRegister("AMBF_TF_Plugin_Node");
+        string topicName = node[transformINFO->name_]["rostopic name"].as<string>();
+        ambf_ral::create_subscriber<AMBF_RAL_MSG(geometry_msgs, PoseStamped), Transforms>
+            (transformINFO->transformSub_, transformINFO->rosNode_, topicName, 1, &Transforms::transformCallback, transformINFO);
+
+        if (node[transformINFO->name_]["filter"]){
+            transformINFO->isFiltered_ = true;
+            if (node[transformINFO->name_]["filter"]["alpha"]){
+                transformINFO->alpha_ = node[transformINFO->name_]["filter"]["alpha"].as<double>();
+            }
+        }
+
+        parseFrameConversion(transformINFO, node);
+        parseSubscribedModifiers(transformINFO, node);
+
+        // Capture the child's initial world transform as the reference origin
+        transformINFO->childRB_->m_bulletRigidBody->getMotionState()->getWorldTransform(transformINFO->initialChildTransform_);
+        transformINFO->isInitialCaptured_ = true;
     }
 }
 
