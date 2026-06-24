@@ -107,6 +107,16 @@ class Transforms{
         // Optional frame conversion applied to subscribed pose before use
         FrameConversion frameConversion_ = FrameConversion::NONE;
         bool invertSubscribed_ = false;
+
+        // Apply the (first) subscribed transform a single time, then stop
+        // re-asserting it so the body can move freely afterward.
+        bool applyOnce_ = false;
+        bool applied_ = false;
+        // For a dynamic (non-static) child, applyOnce_ latches only once the
+        // controller has driven the body to within these tolerances of the
+        // commanded pose. Static/kinematic children latch in one tick (exact).
+        double settlePosTol_ = 1e-3;   // metres
+        double settleRotTol_ = 1e-2;   // radians (~0.57 deg)
         bool hasPreTransform_ = false;
         btTransform preTransform_;
 

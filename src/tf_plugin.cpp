@@ -109,6 +109,10 @@ void Transforms::transformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) 
     isMsgValid_ = true;
     if (!initialized_) {
         convertPoseStampedMsgTocTransform(filteredTransform_, msg);
+        // Apply the first message immediately so a single latched publication
+        // takes effect. Without this, transformation_ would stay identity until
+        // a *second* message arrives, which never happens for latch=True topics.
+        transformation_ = filteredTransform_;
         initialized_ = true;
         return;
     }
@@ -151,6 +155,8 @@ void Transforms::referenceTransformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, Pose
 
     if (!initialized_) {
         convertPoseStampedMsgTocTransform(filteredReferenceTransform_, msg);
+        // Apply immediately so a single latched publication takes effect.
+        reference_trans_ = filteredReferenceTransform_;
         initialized_ = true;
         return;
     }
@@ -301,16 +307,30 @@ void printBtTransform(const btTransform &transform) {
               << roll << ", " << pitch << ", " << yaw << "]" << std::endl;
 }
 
-void afTFPlugin::moveRigidBody(const Transforms* transformINFO, const btTransform transform, double dt){
-    btTransform command;
+// Compose the child's local (parent-relative) transform into a world-frame
+// command, exactly as moveRigidBody applies it. Shared so the apply-once settle
+// check compares against the same target the controller is driving toward.
+static btTransform computeWorldCommand(const Transforms* transformINFO, const btTransform& transform){
     if (transformINFO->parentRB_){
         btTransform parentTransform;
         transformINFO->parentRB_->m_bulletRigidBody->getMotionState()->getWorldTransform(parentTransform);
-        command = parentTransform * transform;
+        return parentTransform * transform;
     }
-    else{
-        command = transform;
-    }
+    return transform;
+}
+
+// True when 'curr' is within (posTol metres, rotTol radians) of 'target'.
+static bool isTransformSettled(const btTransform& curr, const btTransform& target,
+                               double posTol, double rotTol){
+    btScalar posErr = (curr.getOrigin() - target.getOrigin()).length();
+    btScalar d = btFabs(curr.getRotation().dot(target.getRotation()));
+    if (d > btScalar(1.0)) d = btScalar(1.0);
+    btScalar angErr = btScalar(2.0) * btAcos(d);   // geodesic angle between orientations
+    return posErr <= posTol && angErr <= rotTol;
+}
+
+void afTFPlugin::moveRigidBody(const Transforms* transformINFO, const btTransform transform, double dt){
+    btTransform command = computeWorldCommand(transformINFO, transform);
 
     // If the rigidbody is static
     if (transformINFO->childRB_->m_bulletRigidBody->isStaticOrKinematicObject()){
@@ -367,6 +387,11 @@ void afTFPlugin::applyWorldTransform(const Transforms* transformINFO, const btTr
 
 void afTFPlugin::physicsUpdate(double dt){
     for (size_t i = 0; i < m_transformList.size(); i++){
+        // Apply-once: once the subscribed transform has been applied a single
+        // time, stop re-asserting it so the body can move freely afterward.
+        if (m_transformList[i]->applyOnce_ && m_transformList[i]->applied_)
+            continue;
+
         if (m_transformList[i]->transformType_ == TransformationType::FIXED ||
         m_transformList[i]->transformType_ == TransformationType::ROS){
             if (m_transformList[i]->rosNode_){
@@ -387,6 +412,27 @@ void afTFPlugin::physicsUpdate(double dt){
                 transform = m_transformList[i]->preTransform_ * transform;
 
             moveRigidBody(m_transformList[i], transform, dt);
+
+            // Apply-once latch. For ROS, wait for a real message (initialized_);
+            // FIXED has no message so it is eligible immediately. A static/
+            // kinematic child reaches the pose exactly in one tick; a dynamic
+            // child is driven by the controller, so latch only once it has
+            // settled within tolerance of the commanded world pose.
+            if (m_transformList[i]->applyOnce_ &&
+                (m_transformList[i]->transformType_ == TransformationType::FIXED ||
+                 m_transformList[i]->initialized_)){
+                afRigidBodyPtr child = m_transformList[i]->childRB_;
+                if (child->m_bulletRigidBody->isStaticOrKinematicObject()){
+                    m_transformList[i]->applied_ = true;
+                }
+                else{
+                    btTransform target = computeWorldCommand(m_transformList[i], transform);
+                    if (isTransformSettled(child->getCOMTransform(), target,
+                                           m_transformList[i]->settlePosTol_,
+                                           m_transformList[i]->settleRotTol_))
+                        m_transformList[i]->applied_ = true;
+                }
+            }
         }
 
         else if (m_transformList[i]->transformType_ == TransformationType::ROS_RELATIVE){
@@ -415,6 +461,18 @@ void afTFPlugin::physicsUpdate(double dt){
             btTransform worldTarget(deltaRot * T0.getBasis(), T0.getOrigin() + deltaPos);
 
             applyWorldTransform(m_transformList[i], worldTarget, dt);
+
+            if (m_transformList[i]->applyOnce_ && m_transformList[i]->initialized_){
+                afRigidBodyPtr child = m_transformList[i]->childRB_;
+                if (child->m_bulletRigidBody->isStaticOrKinematicObject()){
+                    m_transformList[i]->applied_ = true;
+                }
+                else if (isTransformSettled(child->getCOMTransform(), worldTarget,
+                                            m_transformList[i]->settlePosTol_,
+                                            m_transformList[i]->settleRotTol_)){
+                    m_transformList[i]->applied_ = true;
+                }
+            }
         }
 
         if (!m_transformList[i]->isMsgValid_  && m_audioSource){
@@ -512,6 +570,15 @@ static void parseSubscribedModifiers(Transforms* transformINFO, YAML::Node& node
 
     if (node[name]["invert"] && node[name]["invert"].as<bool>())
         transformINFO->invertSubscribed_ = true;
+
+    if (node[name]["apply once"] && node[name]["apply once"].as<bool>())
+        transformINFO->applyOnce_ = true;
+
+    // Optional settle tolerances for apply-once on a dynamic child.
+    if (node[name]["settle position tolerance"])
+        transformINFO->settlePosTol_ = node[name]["settle position tolerance"].as<double>();
+    if (node[name]["settle orientation tolerance"])
+        transformINFO->settleRotTol_ = node[name]["settle orientation tolerance"].as<double>();
 
     if (node[name]["pre transform"]){
         YAML::Node pt = node[name]["pre transform"];
