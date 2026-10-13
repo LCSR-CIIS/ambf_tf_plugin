@@ -102,7 +102,7 @@ void Transforms::convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, AM
 
 void Transforms::transformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) msg){
     if (msg->header.stamp.sec ==0) {
-        cerr << "Received PoseStamped with invalid (zero) timestamp" << endl;
+        // cerr << "Received PoseStamped with invalid (zero) timestamp" << endl;
         isMsgValid_ = false;
         return;
     }
@@ -147,7 +147,7 @@ void Transforms::transformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) 
 
 void Transforms::referenceTransformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) msg){
     if (msg->header.stamp.sec ==0) {
-        cerr << "Received PoseStamped with invalid (zero) timestamp" << endl;
+        // cerr << "Received PoseStamped with invalid (zero) timestamp" << endl;
         isMsgValid_ = false;
         return;
     }
