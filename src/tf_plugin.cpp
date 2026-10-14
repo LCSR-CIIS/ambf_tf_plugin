@@ -87,6 +87,42 @@ static btTransform applyFrameConversion(FrameConversion conv, const btTransform&
 Transforms::Transforms(){
 }
 
+static double secondsBetween(const TrackingClock::time_point& a, const TrackingClock::time_point& b){
+    return std::chrono::duration<double>(b - a).count();
+}
+
+// Called from the subscriber callback. Receive time (not the message stamp) is
+// used so the check is immune to clock skew with the tracker host.
+void Transforms::registerTrackingSample(bool valid){
+    if (!trackingStatusEnabled_)
+        return;
+
+    // An explicitly invalid sample breaks the current run immediately.
+    if (!valid){
+        hasValidSample_ = false;
+        return;
+    }
+
+    TrackingClock::time_point now = TrackingClock::now();
+    // A gap longer than the timeout starts a new run of fresh samples.
+    if (!hasValidSample_ || secondsBetween(lastValidRx_, now) > trackingTimeout_)
+        freshSince_ = now;
+    lastValidRx_ = now;
+    hasValidSample_ = true;
+}
+
+bool Transforms::updateTrackingState(){
+    TrackingClock::time_point now = TrackingClock::now();
+    bool fresh = hasValidSample_ && secondsBetween(lastValidRx_, now) <= trackingTimeout_;
+
+    if (!fresh)
+        trackingValid_ = false;
+    else if (!trackingValid_ && secondsBetween(freshSince_, now) >= trackingRecover_)
+        trackingValid_ = true;
+
+    return trackingValid_;
+}
+
 void Transforms::convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) msg){
     trans.setLocalPos(cVector3d(msg->pose.position.x,
                                             msg->pose.position.y,
@@ -104,9 +140,11 @@ void Transforms::transformCallback(AMBF_RAL_MSG_PTR(geometry_msgs, PoseStamped) 
     if (msg->header.stamp.sec ==0) {
         // cerr << "Received PoseStamped with invalid (zero) timestamp" << endl;
         isMsgValid_ = false;
+        registerTrackingSample(false);
         return;
     }
     isMsgValid_ = true;
+    registerTrackingSample(true);
     if (!initialized_) {
         convertPoseStampedMsgTocTransform(filteredTransform_, msg);
         // Apply the first message immediately so a single latched publication
@@ -482,12 +520,15 @@ void afTFPlugin::physicsUpdate(double dt){
             }
         }
         else{
-            if (m_audioState == AudioState::PLAYING){
+            if (m_audioState == AudioState::PLAYING && m_audioSource){
                 m_audioSource->stop();
                 m_audioState = AudioState::STOPPED;
             }
         }
     }
+
+    // Evaluated after all callbacks of this tick have been spun.
+    updateTrackingStatus();
 }
 
 int afTFPlugin::readTFListYaml(string file_path){
@@ -596,6 +637,59 @@ static void parseSubscribedModifiers(Transforms* transformINFO, YAML::Node& node
     }
 }
 
+// Optional block:
+//   tracking status:
+//     timeout ms: 50    # valid -> invalid after this long without a valid sample
+//     recover ms: 200   # invalid -> valid after valid samples for this long
+void afTFPlugin::readTrackingStatusFromYaml(Transforms* transformINFO, YAML::Node& node){
+    YAML::Node trackingNode = node[transformINFO->name_]["tracking status"];
+    if (!trackingNode)
+        return;
+
+    transformINFO->trackingStatusEnabled_ = true;
+    if (trackingNode["timeout ms"])
+        transformINFO->trackingTimeout_ = trackingNode["timeout ms"].as<double>() / 1000.0;
+    if (trackingNode["recover ms"])
+        transformINFO->trackingRecover_ = trackingNode["recover ms"].as<double>() / 1000.0;
+
+    if (!m_trackingValidPub){
+        m_trackingRosNode = transformINFO->rosNode_;
+        ambf_ral::create_publisher<AMBF_RAL_MSG(std_msgs, Bool)>
+            (m_trackingValidPub, m_trackingRosNode, TRACKING_VALID_TOPIC, 1, false);
+    }
+
+    cout << "INFO! Tracking status enabled for " << transformINFO->name_
+         << " (timeout " << transformINFO->trackingTimeout_ * 1000.0 << " ms, recover "
+         << transformINFO->trackingRecover_ * 1000.0 << " ms) on " << TRACKING_VALID_TOPIC << endl;
+}
+
+// Publishes the AND of all enabled transforms on every state change and as a
+// heartbeat, so subscribers can also detect when this plugin stops publishing.
+void afTFPlugin::updateTrackingStatus(){
+    if (!m_trackingValidPub)
+        return;
+
+    bool valid = true;
+    for (size_t i = 0; i < m_transformList.size(); i++){
+        if (m_transformList[i]->trackingStatusEnabled_){
+            // Evaluate every transform (no short-circuit) to keep their states current.
+            bool transformValid = m_transformList[i]->updateTrackingState();
+            valid = valid && transformValid;
+        }
+    }
+
+    TrackingClock::time_point now = TrackingClock::now();
+    bool changed = !m_hasPublishedTracking || valid != m_trackingValidPublished;
+    if (changed || secondsBetween(m_lastTrackingPublish, now) >= m_trackingHeartbeatPeriod){
+        AMBF_RAL_MSG(std_msgs, Bool) msg;
+        msg.data = valid;
+        m_trackingValidPub->publish(msg);
+        m_trackingValidPublished = valid;
+        m_hasPublishedTracking = true;
+        m_lastTrackingPublish = now;
+    }
+}
+
 void afTFPlugin::readTransformationFromYaml(Transforms* transformINFO, YAML::Node& node){
     if (transformINFO->transformType_ == TransformationType::FIXED || transformINFO->transformType_ == TransformationType::INITIAL){
         
@@ -653,6 +747,7 @@ void afTFPlugin::readTransformationFromYaml(Transforms* transformINFO, YAML::Nod
 
         parseFrameConversion(transformINFO, node);
         parseSubscribedModifiers(transformINFO, node);
+        readTrackingStatusFromYaml(transformINFO, node);
     }
 
     else if (transformINFO->transformType_ == TransformationType::ROS_RELATIVE){
@@ -671,6 +766,7 @@ void afTFPlugin::readTransformationFromYaml(Transforms* transformINFO, YAML::Nod
 
         parseFrameConversion(transformINFO, node);
         parseSubscribedModifiers(transformINFO, node);
+        readTrackingStatusFromYaml(transformINFO, node);
 
         // Capture the child's initial world transform as the reference origin
         transformINFO->childRB_->m_bulletRigidBody->getMotionState()->getWorldTransform(transformINFO->initialChildTransform_);

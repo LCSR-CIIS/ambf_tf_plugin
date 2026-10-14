@@ -49,15 +49,18 @@
 #include <yaml-cpp/yaml.h>
 #include <boost/program_options.hpp>
 #include <cstdlib>
+#include <chrono>
 
 #if AMBF_ROS1
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <std_msgs/Bool.h>
 
 #elif AMBF_ROS2
 #include <ambf_server/ambf_ral.h>
 #include <rclcpp/rclcpp.hpp>
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "std_msgs/msg/bool.hpp"
 #endif
 
 enum class AudioState{
@@ -79,6 +82,15 @@ using namespace ambf;
 enum class TransformationType{
     FIXED=0, INITIAL=1, ROS=2, ROS_RELATIVE=3
 };
+
+// Aggregated tracking status consumed by the multiview_panels plugin to gray
+// out the navigation views. NOTE: this single topic assumes only ONE tracked
+// tool (the drill / pointer marker). If several transforms enable
+// "tracking status" their states are AND-ed together, so tracking more tools
+// independently will require per-tool topics and changes in multiview_panels.
+static const string TRACKING_VALID_TOPIC = "/ambf/tf_plugin/tracking_valid";
+
+typedef std::chrono::steady_clock TrackingClock;
 
 enum class FrameConversion{
     NONE=0,
@@ -138,6 +150,20 @@ class Transforms{
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr referenceSub_;
         #endif
 
+        // Tracking status (optional, "tracking status" block in the tf config).
+        // VALID -> INVALID when no valid sample arrives for trackingTimeout_.
+        // INVALID -> VALID only after valid samples keep arriving without a
+        // gap for trackingRecover_ (avoids flickering at the visibility edge).
+        bool trackingStatusEnabled_ = false;
+        double trackingTimeout_ = 0.05;  // seconds
+        double trackingRecover_ = 0.2;   // seconds
+        bool trackingValid_ = false;
+        bool hasValidSample_ = false;
+        TrackingClock::time_point lastValidRx_;
+        TrackingClock::time_point freshSince_;
+        void registerTrackingSample(bool valid);
+        bool updateTrackingState();
+
         // Audio related
         bool isMsgValid_ = true;
         void convertPoseStampedMsgTocTransform(chai3d::cTransform &trans, AMBF_RAL_MSG_PTR(geometry_msgs,PoseStamped) msg);
@@ -164,6 +190,8 @@ class afTFPlugin: public afSimulatorPlugin{
 
         int readTFListYaml(string file_path);
         void readTransformationFromYaml(Transforms* transformINFO, YAML::Node& node);
+        void readTrackingStatusFromYaml(Transforms* transformINFO, YAML::Node& node);
+        void updateTrackingStatus();
 
 
     // private:
@@ -182,7 +210,19 @@ class afTFPlugin: public afSimulatorPlugin{
         chai3d::cAudioSource* m_audioSource = nullptr;
         chai3d::cAudioBuffer* m_audioBuffer = nullptr;
         chai3d::cAudioDevice* m_audioDevice = nullptr;
-        AudioState m_audioState;
+        AudioState m_audioState = AudioState::STOPPED;
+
+        // Tracking status publisher (see TRACKING_VALID_TOPIC)
+        ambf_ral::node_ptr_t m_trackingRosNode;
+        #if AMBF_ROS1
+        std::shared_ptr<ros::Publisher> m_trackingValidPub;
+        #elif AMBF_ROS2
+        rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr m_trackingValidPub;
+        #endif
+        bool m_trackingValidPublished = false;
+        bool m_hasPublishedTracking = false;
+        TrackingClock::time_point m_lastTrackingPublish;
+        const double m_trackingHeartbeatPeriod = 0.05; // seconds (20 Hz)
 
 };
 
